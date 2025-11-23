@@ -631,9 +631,15 @@ void Misc(void*) {
             }
             
             // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
+            // Format: realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10
+            // where vdd2_mV and vddq_mV are in millivolts
+            // rgltrGetVoltage returns value in microvolts (µV), so divide by 1000 to get mV
+            // Example: vdd2_raw = 1075000 µV -> vdd2_mV = 1075 mV
             const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
             const u32 vddq_mV = vddq_raw / 1000;  // µV to mV
-            realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10;
+            // Pack: vdd2_mV (up to ~2000) * 100000 + vddq_mV (up to ~1000) * 10
+            // This fits in uint32_t: max ~200000000 + 10000 = 200010000 < 2^32
+            realRAM_mV = vddq_mV * 100000 + vdd2_mV * 10;
         }
         
         // Temperatures
@@ -810,8 +816,13 @@ void Misc3(void*) {
             }
             
             // Pack VDD2 and VDDQ into realRAM_mV in sys-clk format
+            // Format: realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10
+            // where vdd2_mV and vddq_mV are in millivolts
+            // rgltrGetVoltage returns value in microvolts (µV)
             const u32 vdd2_mV = vdd2_raw / 1000;  // µV to mV
             const u32 vddq_mV = vddq_raw / 1000;  // µV to mV
+            // Pack: vdd2_mV (up to ~2000) * 100000 + vddq_mV (up to ~1000) * 10
+            // This fits in uint32_t: max ~200000000 + 10000 = 200010000 < 2^32
             realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10;
         }
         

@@ -854,9 +854,10 @@ public:
 
         /* ── RAM voltage ───────────────────────────── */
         if (settings.realVolts && (settings.showVDD2 || settings.showVDDQ)) {
-            /* realRAM_mV packs VDD2 | VDDQ in 10-µV units        *
-             * → split, convert to mV                           */
-            const float mv_vdd2 = (realRAM_mV / 10000) / 10.0f;   // VDD2
+            /* realRAM_mV packs VDD2 | VDDQ in sys-clk format:    *
+             * realRAM_mV = vdd2_mV * 100000 + vddq_mV * 10       *
+             * → split, convert to mV                             */
+            const float mv_vdd2 = realRAM_mV / 100000.0f;   // VDD2
             const uint32_t mv_vddq = (realRAM_mV % 10000) / 10;   // VDDQ
         
             // Build voltage string based on settings
@@ -867,7 +868,8 @@ public:
                 if (settings.decimalVDD2) {
                     snprintf(temp_buffer, sizeof(temp_buffer), "%.1f mV", mv_vdd2);
                 } else {
-                    snprintf(temp_buffer, sizeof(temp_buffer), "%u mV", (uint32_t)mv_vdd2);
+                    const uint32_t mv_vdd2_i = static_cast<uint32_t>(mv_vdd2);
+                    snprintf(temp_buffer, sizeof(temp_buffer), "%u mV", mv_vdd2_i);
                 }
                 strcat(RAM_volt_c, temp_buffer);
             }
