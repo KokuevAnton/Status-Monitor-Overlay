@@ -1045,25 +1045,25 @@ public:
             }
     
             if (settings.realVolts) {
-                const float mv_vdd2_f = (realRAM_mV % 10000) / 10.0f;
-                const uint32_t mv_vdd2_i = (realRAM_mV % 10000) / 10;
-                const uint32_t mv_vddq   = realRAM_mV / 100000;
+                const float mv_vdd2_f = realRAM_mV / 100000.0f;
+                const uint32_t mv_vdd2_i = realRAM_mV / 100000;
+                const uint32_t mv_vddq   = (realRAM_mV % 10000) / 10;
             
                 if (isMariko) {
-                    if (settings.showVDDQ && settings.showVDD2) {
+                    if (settings.showVDD2 && settings.showVDDQ) {
                         if (settings.decimalVDD2)
                             snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
                                      "%.1f mV%u mV", mv_vdd2_f, mv_vddq);
                         else
                             snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c),
                                      "%u mV%u mV", mv_vdd2_i, mv_vddq);
-                    } else if (settings.showVDDQ) {
-                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u mV", mv_vddq);
                     } else if (settings.showVDD2) {
                         if (settings.decimalVDD2)
                             snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%.1f mV", mv_vdd2_f);
                         else
                             snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u mV", mv_vdd2_i);
+                    } else if (settings.showVDDQ) {
+                        snprintf(MINI_RAM_volt_c, sizeof(MINI_RAM_volt_c), "%u mV", mv_vddq);
                     }
                 } else {
                     if (settings.decimalVDD2)
