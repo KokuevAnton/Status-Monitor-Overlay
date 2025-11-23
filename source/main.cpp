@@ -983,12 +983,12 @@ int main(int argc, char **argv) {
 
     // load heap settings outside of loop (only Status Monitor directive)
     ult::currentHeapSize = ult::getCurrentHeapSize();
-    ult::expandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_8MB;
-    ult::limitedMemory = ult::currentHeapSize == ult::OverlayHeapSize::Size_4MB;
+    ult::expandedMemory = ult::currentHeapSize >= static_cast<size_t>(ult::OverlayHeapSize::Size_8MB);
+    ult::limitedMemory = ult::currentHeapSize == static_cast<size_t>(ult::OverlayHeapSize::Size_4MB);
 
     // Initialize buffer sizes based on expanded memory setting
     if (ult::expandedMemory) {
-        ult::furtherExpandedMemory = ult::currentHeapSize >= ult::OverlayHeapSize::Size_10MB;
+        ult::furtherExpandedMemory = ult::currentHeapSize >= static_cast<size_t>(ult::OverlayHeapSize::Size_10MB);
         
         ult::loaderTitle += !ult::furtherExpandedMemory ? "+" : "×";
         ult::COPY_BUFFER_SIZE = 262144;
