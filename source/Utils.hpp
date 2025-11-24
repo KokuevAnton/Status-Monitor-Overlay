@@ -1404,6 +1404,7 @@ struct MiniSettings {
     bool invertBatteryDisplay;
     bool disableScreenshots;
     bool sleepExit;
+    bool showRefreshRate;
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
@@ -1437,6 +1438,7 @@ struct MicroSettings {
     bool setPosBottom;
     bool disableScreenshots;
     bool sleepExit;
+    bool showRefreshRate;
 };
 
 struct FpsCounterSettings {
@@ -1523,6 +1525,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->refreshRate = 1;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
+    settings->showRefreshRate = true;
     //settings->setPos = 0;
     settings->frameOffsetX = 10;
     settings->frameOffsetY = 10;
@@ -1745,6 +1748,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         settings->sleepExit = (key != "FALSE");
     }
     
+    // Process show refresh rate
+    it = section.find("show_refresh_rate");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRefreshRate = (key != "FALSE");
+    }
+    
     // Process alignment settings
     //it = section.find("layer_width_align");
     //if (it != section.end()) {
@@ -1811,6 +1822,7 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
     settings->setPosBottom = false;
     settings->disableScreenshots = false;
     settings->sleepExit = false;
+    settings->showRefreshRate = true;
     settings->refreshRate = 1;
 
     // Open and read file efficiently
@@ -2030,6 +2042,14 @@ ALWAYS_INLINE void GetConfigSettings(MicroSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->sleepExit = (key != "FALSE");
+    }
+    
+    // Process show refresh rate
+    it = section.find("show_refresh_rate");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showRefreshRate = (key != "FALSE");
     }
 
 }

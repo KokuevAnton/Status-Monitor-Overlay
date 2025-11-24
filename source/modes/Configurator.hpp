@@ -451,6 +451,12 @@ public:
             });
             list->addItem(dynamicColors);
 
+            auto* showRefreshRate = new tsl::elm::ToggleListItem("Show Refresh Rate", getCurrentShowRefreshRate());
+            showRefreshRate->setStateChangedListener([this, section](bool state) {
+                ult::setIniFileValue(configIniPath, section, "show_refresh_rate", state ? "true" : "false");
+            });
+            list->addItem(showRefreshRate);
+
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
             disableScreenshots->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
@@ -605,6 +611,14 @@ private:
         if (value.empty()) return true;
         convertToUpper(value);
         return value == "TRUE";
+    }
+    
+    bool getCurrentShowRefreshRate() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_refresh_rate");
+        if (value.empty()) return true; // Default: true
+        convertToUpper(value);
+        return value != "FALSE";
     }
 
     bool getCurrentUseIntegerCounter(const std::string& section) {

@@ -726,6 +726,19 @@ public:
 
         mutexLock(&mutex_Misc);
         
+        // Get refresh rate under mutex for accuracy
+        uint8_t currentRefreshRate = 0;
+        if (settings.showRefreshRate && SharedMemoryUsed) {
+            // Try to get refresh rate from NxFps structure first (more accurate)
+            if (NxFps && NxFps->MAGIC == 0x465053) {
+                currentRefreshRate = NxFps->currentRefreshRate;
+            }
+            // Fallback to reading from shared memory offset if NxFps is not available
+            if (currentRefreshRate == 0 && shmemGetAddr(&_sharedmemory)) {
+                currentRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
+            }
+        }
+        
         // CPU frequency and voltage
         const char* cpuDiff = "@";
         if (realCPU_Hz) {
@@ -1081,7 +1094,11 @@ public:
         }
 
         // FPS
-        snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        if (settings.showRefreshRate && currentRefreshRate > 0) {
+            snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f/%u", useOldFPSavg ? FPSavg_old : FPSavg, currentRefreshRate);
+        } else {
+            snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%2.1f", useOldFPSavg ? FPSavg_old : FPSavg);
+        }
 
 
         // Read Speed

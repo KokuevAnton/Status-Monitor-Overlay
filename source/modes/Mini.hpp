@@ -438,7 +438,7 @@ public:
                         width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("444.4", false, fontsize).first;
+                        width = renderer->getTextDimensions("444.4/120 [444.4 - 444.4]", false, fontsize).first;
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (settings.showFullResolution)
@@ -1203,6 +1203,19 @@ public:
             resolutionLookup = 0;
         }
         
+        // Get refresh rate under mutex for accuracy
+        uint8_t currentRefreshRate = 0;
+        if (settings.showRefreshRate && SharedMemoryUsed) {
+            // Try to get refresh rate from NxFps structure first (more accurate)
+            if (NxFps && NxFps->MAGIC == 0x465053) {
+                currentRefreshRate = NxFps->currentRefreshRate;
+            }
+            // Fallback to reading from shared memory offset if NxFps is not available
+            if (currentRefreshRate == 0 && shmemGetAddr(&_sharedmemory)) {
+                currentRefreshRate = *(uint8_t*)((uintptr_t)shmemGetAddr(&_sharedmemory) + 1);
+            }
+        }
+        
         mutexUnlock(&mutex_Misc);
     
         // Battery/power draw - always update since BAT/DRAW might be displayed
@@ -1293,8 +1306,12 @@ public:
             }
             else if (key == "FPS" && !(flags & 64) && GameRunning) {
                 if (Temp[0]) strcat(Temp, "\n");
-                char Temp_s[24];
-                snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                char Temp_s[32];
+                if (settings.showRefreshRate && currentRefreshRate > 0) {
+                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f]", FPSavg, currentRefreshRate, FPSmin, FPSmax);
+                } else {
+                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                }
                 strcat(Temp, Temp_s);
                 flags |= 64;
             }
