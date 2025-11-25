@@ -27,6 +27,13 @@ private:
     static constexpr int screenWidth = 1280;
     static constexpr int screenHeight = 720;
 
+    // Frame time history for average calculation (last 300 frames)
+    static constexpr size_t FRAME_TIME_HISTORY_SIZE = 300;
+    uint32_t frameTimeHistory[FRAME_TIME_HISTORY_SIZE] = {0}; // Store ticks, not milliseconds
+    size_t frameTimeHistoryIndex = 0;
+    size_t frameTimeHistoryCount = 0;
+    uint64_t lastTrackedFrameNumber = 0; // Local tracking to avoid thread sync issues
+
     struct ButtonState {
         std::atomic<bool> minusDragActive{false};
         std::atomic<bool> plusDragActive{false};
@@ -438,7 +445,11 @@ public:
                         width = renderer->getTextDimensions("-44.44 W100.0% [44:44]", false, fontsize).first;
                     } else if (key == "FPS") {
                         //dimensions = renderer->drawString("444.4", false, 0, 0, fontsize, renderer->a(0x0000));
-                        width = renderer->getTextDimensions("444.4/120 [444.4 - 444.4]", false, fontsize).first;
+                        if (settings.showFrameTime) {
+                            width = renderer->getTextDimensions("444.4 [444.4 - 444.4]/120 (16.667 ms)", false, fontsize).first;
+                        } else {
+                            width = renderer->getTextDimensions("444.4/120 [444.4 - 444.4]", false, fontsize).first;
+                        }
                     } else if (key == "RES") {
                         //dimensions = renderer->drawString("3840x21603840x2160", false, 0, 0, fontsize, renderer->a(0x0000));
                         if (settings.showFullResolution)
@@ -1216,7 +1227,41 @@ public:
             }
         }
         
+        // Track frame time history for average calculation (last 300 frames)
+        // Copy data under mutex to avoid thread synchronization issues
+        uint64_t local_frameNumber = 0;
+        uint32_t local_FPSticks[10] = {0};
+        bool local_NxFps_valid = false;
+        if (settings.showFrameTime && GameRunning && NxFps && NxFps->MAGIC == 0x465053) {
+            local_frameNumber = NxFps->frameNumber;
+            memcpy(local_FPSticks, NxFps->FPSticks, sizeof(local_FPSticks));
+            local_NxFps_valid = true;
+        }
+        
         mutexUnlock(&mutex_Misc);
+        
+        // Process frame time tracking outside mutex
+        if (settings.showFrameTime && local_NxFps_valid) {
+            // Track new frames using local variable to avoid thread synchronization issues
+            if (local_frameNumber != lastTrackedFrameNumber) {
+                const size_t element_count = sizeof(local_FPSticks) / sizeof(local_FPSticks[0]);
+                // Use the most recent frame tick (last element in array)
+                if (element_count > 0 && local_FPSticks[element_count - 1] > 0) {
+                    // Store ticks directly, convert to milliseconds only when calculating average
+                    frameTimeHistory[frameTimeHistoryIndex] = local_FPSticks[element_count - 1];
+                    frameTimeHistoryIndex = (frameTimeHistoryIndex + 1) % FRAME_TIME_HISTORY_SIZE;
+                    if (frameTimeHistoryCount < FRAME_TIME_HISTORY_SIZE) {
+                        frameTimeHistoryCount++;
+                    }
+                }
+                lastTrackedFrameNumber = local_frameNumber;
+            }
+        } else if (!GameRunning || !local_NxFps_valid) {
+            // Reset history when game stops
+            frameTimeHistoryCount = 0;
+            frameTimeHistoryIndex = 0;
+            lastTrackedFrameNumber = 0;
+        }
     
         // Battery/power draw - always update since BAT/DRAW might be displayed
         if (isActive("BAT") || isActive("DRAW")) {
@@ -1306,11 +1351,27 @@ public:
             }
             else if (key == "FPS" && !(flags & 64) && GameRunning) {
                 if (Temp[0]) strcat(Temp, "\n");
-                char Temp_s[32];
-                if (settings.showRefreshRate && currentRefreshRate > 0) {
-                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f]", FPSavg, currentRefreshRate, FPSmin, FPSmax);
+                char Temp_s[48];
+                if (settings.showFrameTime && frameTimeHistoryCount > 0) {
+                    // Calculate average frame time from last 300 frames
+                    // Sum ticks first, then convert to milliseconds to avoid rounding errors
+                    uint64_t sum_ticks = 0;
+                    for (size_t i = 0; i < frameTimeHistoryCount; i++) {
+                        sum_ticks += frameTimeHistory[i];
+                    }
+                    float avg_frame_time_ms = (sum_ticks * 1000.0f) / (frameTimeHistoryCount * systemtickfrequency);
+                    
+                    if (settings.showRefreshRate && currentRefreshRate > 0) {
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]/%u (%.3f ms)", FPSavg, FPSmin, FPSmax, currentRefreshRate, avg_frame_time_ms);
+                    } else {
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f] (%.3f ms)", FPSavg, FPSmin, FPSmax, avg_frame_time_ms);
+                    }
                 } else {
-                    snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                    if (settings.showRefreshRate && currentRefreshRate > 0) {
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f]", FPSavg, currentRefreshRate, FPSmin, FPSmax);
+                    } else {
+                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                    }
                 }
                 strcat(Temp, Temp_s);
                 flags |= 64;

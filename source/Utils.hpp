@@ -1405,6 +1405,7 @@ struct MiniSettings {
     bool disableScreenshots;
     bool sleepExit;
     bool showRefreshRate;
+    bool showFrameTime;
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
@@ -1526,6 +1527,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->disableScreenshots = false;
     settings->sleepExit = false;
     settings->showRefreshRate = true;
+    settings->showFrameTime = false;
     //settings->setPos = 0;
     settings->frameOffsetX = 10;
     settings->frameOffsetY = 10;
@@ -1754,6 +1756,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showRefreshRate = (key != "FALSE");
+    }
+    
+    // Process show frame time
+    it = section.find("show_frame_time");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFrameTime = (key != "FALSE");
     }
     
     // Process alignment settings
