@@ -77,8 +77,6 @@ private:
     s16 y_60FPS = rectangle_y;
     bool isAbove = false;
     Mutex fpsGraphMutex;
-    Thread fpsGraphThread;
-    bool fpsGraphThreadExit = false;
     char LCD_Hz_c[8];
     std::vector<uint32_t> lcd_hz_samples;
     uint32_t lcd_hz_sum;
@@ -256,20 +254,11 @@ public:
 		deactivateOriginalFooter = true;
 		StartThreads();
 		mutexInit(&fpsGraphMutex);
-		threadCreate(&fpsGraphThread, FpsGraphUpdate, this, NULL, 0x1000, 0x3F, -2);
-		threadStart(&fpsGraphThread);
 		snprintf(LCD_Hz_c, sizeof(LCD_Hz_c), "LCD:--");
+		snprintf(FPSavg_c, sizeof(FPSavg_c), "--");
 	}
 	
     ~NanoOverlay() {
-        // Signal thread to exit first
-        fpsGraphThreadExit = true;
-        
-        // Wait for thread to exit - it will check the flag and exit properly
-        // The thread checks the exit flag before and after mutex operations
-        threadWaitForExit(&fpsGraphThread);
-        threadClose(&fpsGraphThread);
-        
 		CloseThreads();
 		FullMode = true;
 		tsl::hlp::requestForeground(true);
@@ -277,102 +266,6 @@ public:
 			tsl::gfx::Renderer::get().addScreenshotStacks();
 		}
 		deactivateOriginalFooter = false;
-    }
-	
-	static void FpsGraphUpdate(void* arg) {
-		NanoOverlay* overlay = static_cast<NanoOverlay*>(arg);
-		static uint64_t lastUpdateTime = 0;
-		static uint64_t lastFrame = 0;
-		const uint64_t updateInterval15Hz = systemtickfrequency / 15; // ~66.7ms for 15 Hz
-		while (!overlay->fpsGraphThreadExit) {
-			mutexLock(&overlay->fpsGraphMutex);
-			
-			// Check exit flag after acquiring mutex
-			if (overlay->fpsGraphThreadExit) {
-				mutexUnlock(&overlay->fpsGraphMutex);
-				break;
-			}
-			
-			static float FPSavg_old = 0;
-			stats temp = {0, false};
-			uint64_t currentTime = svcGetSystemTick();
-			bool shouldUpdate = false;
-			
-			// Check if game is still running - if not, clear graph and wait
-			bool gameRunning = GameRunning.load(std::memory_order_acquire);
-			if (!gameRunning) {
-				// Game closed, clear graph data
-				overlay->readings.clear();
-				overlay->readings.shrink_to_fit();
-				lastFrame = 0; // Reset to detect when game starts again
-				FPSavg_old = 0; // Reset FPS tracking
-				mutexUnlock(&overlay->fpsGraphMutex);
-				// Check exit flag before sleeping
-				if (overlay->fpsGraphThreadExit) break;
-				svcSleepThread(1'000'000'000 / 15); // Sleep longer when game is not running
-				// Check exit flag after sleeping
-				if (overlay->fpsGraphThreadExit) break;
-				continue;
-			}
-			
-			// Safely read lastFrameNumber (it's updated under mutex_Misc, but we read it here)
-			// This is a race condition, but acceptable since we're just checking for changes
-			uint64_t currentFrameNumber = lastFrameNumber;
-			
-			// Check if new frame data is available (game is running)
-			if (lastFrame == currentFrameNumber) {
-				// No new frames, don't update graph
-				mutexUnlock(&overlay->fpsGraphMutex);
-				// Check exit flag before sleeping
-				if (overlay->fpsGraphThreadExit) break;
-				svcSleepThread(1'000'000'000 / 60);
-				// Check exit flag after sleeping
-				if (overlay->fpsGraphThreadExit) break;
-				continue;
-			}
-			lastFrame = currentFrameNumber;
-			
-			// Safely read FPSavg (it's updated under mutex_Misc, but we read it here)
-			// This is a race condition, but acceptable since we're just reading a float value
-			float currentFPSavg = FPSavg;
-			
-			if (FPSavg_old != currentFPSavg) {
-				// FPS changed, update immediately
-				shouldUpdate = true;
-				FPSavg_old = currentFPSavg;
-				lastUpdateTime = currentTime;
-			} else if (currentTime - lastUpdateTime >= updateInterval15Hz) {
-				// FPS didn't change, but ~66.7ms passed (15 Hz update rate)
-				shouldUpdate = true;
-				lastUpdateTime = currentTime;
-			}
-			
-			if (shouldUpdate) {
-				snprintf(overlay->FPSavg_c, sizeof overlay->FPSavg_c, "%2.1f",  currentFPSavg);
-				if (currentFPSavg < 254) {
-					if ((s16)(overlay->readings.size()) >= overlay->rectangle_width) {
-						overlay->readings.erase(overlay->readings.begin());
-					}
-					float whole = std::round(currentFPSavg);
-					temp.value = static_cast<s16>(std::lround(currentFPSavg));
-					if (currentFPSavg < whole+0.04 && currentFPSavg > whole-0.05) {
-						temp.zero_rounded = true;
-					}
-					overlay->readings.push_back(temp);
-				}
-				else {
-					overlay->readings.clear();
-					overlay->readings.shrink_to_fit();
-				}
-			}
-			mutexUnlock(&overlay->fpsGraphMutex);
-			
-			// Check exit flag before sleeping
-			if (overlay->fpsGraphThreadExit) break;
-			svcSleepThread(1'000'000'000 / 60);
-			// Check exit flag after sleeping
-			if (overlay->fpsGraphThreadExit) break;
-        }
     }
     virtual tsl::elm::Element* createUI() override {
         rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
@@ -704,6 +597,42 @@ public:
 				}
 			}
 			mutexUnlock(&mutex_Misc);
+		}
+		
+		// Update FPS graph (like FPS Graph mode - in update() method, not separate thread)
+		static uint64_t lastFrame = 0;
+		stats temp = {0, false};
+		
+		snprintf(FPSavg_c, sizeof FPSavg_c, "%2.1f",  FPSavg);
+		if (FPSavg < 254) {
+			// Only update when new frame data is available (like FPS Graph mode)
+			if (lastFrame == lastFrameNumber) {
+				// No new frames, skip update
+			} else {
+				lastFrame = lastFrameNumber;
+				mutexLock(&fpsGraphMutex);
+				if ((s16)(readings.size()) >= rectangle_width) {
+					readings.erase(readings.begin());
+				}
+				float whole = std::round(FPSavg);
+				temp.value = static_cast<s16>(std::lround(FPSavg));
+				if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
+					temp.zero_rounded = true;
+				}
+				readings.push_back(temp);
+				mutexUnlock(&fpsGraphMutex);
+			}
+		}
+		else {
+			// Game closed - FPSavg is 254, clear graph
+			if (readings.size()) {
+				mutexLock(&fpsGraphMutex);
+				readings.clear();
+				readings.shrink_to_fit();
+				mutexUnlock(&fpsGraphMutex);
+				lastFrame = 0;
+			}
+			FPSavg_c[0] = 0;
 		}
 	}
 	
