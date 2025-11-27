@@ -544,15 +544,6 @@ void Misc(void*) {
     }
     
     do {
-        // Early exit check - if game closed, skip operations and wait for exit signal
-        if (!GameRunning.load(std::memory_order_acquire)) {
-            // Game closed - wait for exit signal with shorter timeout to respond faster
-            if (leventWait(&threadexit, 100'000'000)) { // 100ms timeout
-                break; // Exit signal received
-            }
-            continue; // Check again
-        }
-        
         mutexLock(&mutex_Misc);
         
         // CPU, GPU and RAM Frequency - safe to read even when game closes
@@ -689,8 +680,8 @@ void Misc(void*) {
             }
         }
         
-        // GPU Load - only read when game is running to avoid hangs when game closes
-        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame && GameRunning) {
+        // GPU Load - read always (not just when game is running)
+        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame) {
             nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
         }
         
@@ -715,7 +706,9 @@ void Misc(void*) {
                 if (FPSavg < FPSmin) FPSmin = FPSavg;
             }
         } else {
-            FPSavg = 254;
+            // Game not running - set FPS to display refresh rate (TeslaFPS)
+            FPS = TeslaFPS > 0 ? TeslaFPS : 60; // Default to 60 if TeslaFPS not set
+            FPSavg = 254; // Keep FPSavg at 254 to indicate no game FPS data
             FPSmin = 254;
             FPSmax = 0;
         }
