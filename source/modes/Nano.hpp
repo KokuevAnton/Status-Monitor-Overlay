@@ -1,0 +1,429 @@
+#pragma once
+#include "../Utils.hpp"
+#include "../include/t210.h"
+
+class MainMenu;
+
+class NanoOverlayElement : public tsl::elm::Element {
+public:
+    NanoOverlayElement(tsl::elm::Element* status, tsl::elm::Element* fpsGraph)
+        : m_status(status), m_fpsGraph(fpsGraph) {}
+    virtual void draw(tsl::gfx::Renderer* renderer) override {
+        m_status->draw(renderer);
+        m_fpsGraph->draw(renderer);
+    }
+    virtual void layout(u16 parentX, u16 parentY, u16 parentWidth, u16 parentHeight) override {
+        m_status->setBoundaries(parentX, parentY, parentWidth, parentHeight);
+        m_status->invalidate();
+        m_fpsGraph->setBoundaries(parentX, parentY, parentWidth, parentHeight);
+        m_fpsGraph->invalidate();
+    }
+private:
+    tsl::elm::Element* m_status;
+    tsl::elm::Element* m_fpsGraph;
+};
+
+class NanoOverlay : public tsl::Gui {
+	
+struct stats {
+    s16 value;
+    bool zero_rounded;
+};
+
+private:
+    std::vector<double> cpu_usage_history;
+    std::vector<double> gpu_load_history;
+    FpsGraphSettings fpsGraphSettings;
+    char GPU_Load_c[32] = "";
+    char Rotation_SpeedLevel_c[64] = "";
+    char RAM_var_compressed_c[128] = "";
+    char SoCPCB_temperature_c[64] = "";
+    char skin_temperature_c[32] = "";
+    char Variables[512] = "";
+    char VariablesB[512] = "";
+    char CPU_compressed_c[160] = "";
+    char CPU_Usage0[32] = "";
+    char CPU_Usage1[32] = "";
+    char CPU_Usage2[32] = "";
+    char CPU_Usage3[32] = "";
+    char RAM_all_c[64] = "";
+    char RAM_freq_c[8] = "";
+    char FPSavg_c[8] = "";
+    char FPS_var_compressed_c[64] = "";
+    uint32_t rectangleWidth = 0;
+    size_t fontsize = 0;
+    NanoSettings settings;
+    bool Initialized = false;
+    ApmPerformanceMode performanceMode = ApmPerformanceMode_Invalid;
+    uint64_t systemtickfrequency_impl = systemtickfrequency;
+    const size_t history_size = 30;
+    
+    std::vector<stats> readings;
+    s16 base_y = 0;
+    s16 base_x = 0;
+    s16 rectangle_width = 180 + 52;  // Doubled width to fit more values
+    s16 rectangle_height = 72;
+    s16 rectangle_x = 5;
+    s16 rectangle_y = 5;
+    s16 rectangle_range_max = 72;
+    s16 rectangle_range_min = 0;
+    char legend_max[3] = "72";
+    char legend_min[2] = "0";
+    s32 range = std::abs(rectangle_range_max - rectangle_range_min) + 1;
+    s16 x_end = rectangle_x + rectangle_width;
+    s16 y_old = rectangle_y+rectangle_height;
+    s16 y_30FPS = rectangle_y+(rectangle_height / 2);
+    s16 y_60FPS = rectangle_y;
+    bool isAbove = false;
+    Mutex fpsGraphMutex;
+    Thread fpsGraphThread;
+    bool fpsGraphThreadExit = false;
+    char LCD_Hz_c[8];
+    std::vector<uint32_t> lcd_hz_samples;
+    uint32_t lcd_hz_sum;
+    uint32_t lcd_hz_avg;
+    uint64_t last_lcd_hz_update;
+    tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
+		
+	void drawGradientText(tsl::gfx::Renderer *renderer, const char* text, u32 x, u32 y, u16 w, u16 h) {
+		u32 startColor = 0x008bdb;
+		u32 endColor = 0x00d9c4;
+		size_t textLength = strlen(text);
+		
+		for (size_t i = 0; i < textLength; i++) {
+			float progress = static_cast<float>(i) / (textLength - 1);
+			
+			u8 r = static_cast<u8>((1 - progress) * ((startColor >> 16) & 0xFF) + progress * ((endColor >> 16) & 0xFF));
+			u8 g = static_cast<u8>((1 - progress) * ((startColor >> 8) & 0xFF) + progress * ((endColor >> 8) & 0xFF));
+			u8 b = static_cast<u8>((1 - progress) * (startColor & 0xFF) + progress * (endColor & 0xFF));
+			
+			tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+			
+			char buffer[2] = {text[i], '\0'};
+			renderer->drawString(buffer, false, x, y, 15, color);
+			
+			auto [width, height] = renderer->drawString(buffer, false, 0, 0, 16, tsl::style::color::ColorTransparent);
+			x += width;
+		}
+	}		
+	void drawGradientTextB(tsl::gfx::Renderer *renderer, const char* text, u32 x, u32 y, u16 w, u16 h) {
+		u32 startColor = 0x008bdb;
+		u32 endColor = 0x00d9c4;
+		size_t textLength = strlen(text);
+		
+		for (size_t i = 0; i < textLength; i++) {
+			float progress = static_cast<float>(i) / (textLength - 1);
+			
+			u8 r = static_cast<u8>((1 - progress) * ((startColor >> 16) & 0xFF) + progress * ((endColor >> 16) & 0xFF));
+			u8 g = static_cast<u8>((1 - progress) * ((startColor >> 8) & 0xFF) + progress * ((endColor >> 8) & 0xFF));
+			u8 b = static_cast<u8>((1 - progress) * (startColor & 0xFF) + progress * (endColor & 0xFF));
+			
+			tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+			
+			char buffer[2] = {text[i], '\0'};
+			renderer->drawString(buffer, false, x, y, 15, color);
+			
+			auto [width, height] = renderer->drawString(buffer, false, 0, 0, 16, tsl::style::color::ColorTransparent);
+			x += width;
+		}
+	}
+	
+// Упрощенная функция для рисования линии одного цвета
+void drawSimpleLine(tsl::gfx::Renderer *renderer, s16 x1, s16 y1, s16 x2, s16 y2, u32 color) {
+    tsl::Color lineColor( 
+        static_cast<u8>(((color >> 16) & 0xFF) >> 4), 
+        static_cast<u8>(((color >> 8) & 0xFF) >> 4), 
+        static_cast<u8>((color & 0xFF) >> 4), 
+        0xF 
+    );
+    renderer->drawLine(x1, y1, x2, y2, lineColor);
+}
+	
+public:
+	NanoOverlay() : lcd_hz_sum(0), lcd_hz_avg(60), last_lcd_hz_update(0) {
+		GetConfigSettings(&settings);
+		GetConfigSettings(&fpsGraphSettings);
+		apmGetPerformanceMode(&performanceMode);
+		if (performanceMode == ApmPerformanceMode_Normal) {
+			fontsize = settings.handheldFontSize;
+		}
+		else fontsize = settings.dockedFontSize;
+		switch(settings.setPos) {
+			case 1:
+			case 4:
+			case 7:
+				tsl::gfx::Renderer::getRenderer().setLayerPos(624, 0);
+				break;
+			case 2:
+			case 5:
+			case 8:
+				tsl::gfx::Renderer::getRenderer().setLayerPos(1248, 0);
+				break;
+		}
+		cpu_usage_history = std::vector<double>(history_size, 0.0);
+		gpu_load_history = std::vector<double>(history_size, 0.0);
+		mutexInit(&mutex_BatteryChecker);
+		mutexInit(&mutex_Misc);
+		tsl::hlp::requestForeground(false);
+		FullMode = false;
+		
+		TeslaFPS = 60;
+		systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
+		
+		deactivateOriginalFooter = true;
+		StartThreads();
+		mutexInit(&fpsGraphMutex);
+		threadCreate(&fpsGraphThread, FpsGraphUpdate, this, NULL, 0x1000, 0x3F, -2);
+		threadStart(&fpsGraphThread);
+		snprintf(LCD_Hz_c, sizeof(LCD_Hz_c), "LCD:--");
+	}
+	
+    ~NanoOverlay() {
+        fpsGraphThreadExit = true;
+        threadWaitForExit(&fpsGraphThread);
+        threadClose(&fpsGraphThread);
+		CloseThreads();
+		FullMode = true;
+		tsl::hlp::requestForeground(true);
+		deactivateOriginalFooter = false;
+    }
+	
+	static void FpsGraphUpdate(void* arg) {
+		NanoOverlay* overlay = static_cast<NanoOverlay*>(arg);
+		while (!overlay->fpsGraphThreadExit) {
+			mutexLock(&overlay->fpsGraphMutex);
+			stats temp = {0, false};
+			
+			// Always update graph, even if value doesn't change (for continuous scrolling)
+			snprintf(overlay->FPSavg_c, sizeof overlay->FPSavg_c, "%2.1f",  FPSavg);
+			if (FPSavg < 254) {
+				if ((s16)(overlay->readings.size()) >= overlay->rectangle_width) {
+					overlay->readings.erase(overlay->readings.begin());
+				}
+				float whole = std::round(FPSavg);
+				temp.value = static_cast<s16>(std::lround(FPSavg));
+				if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
+					temp.zero_rounded = true;
+				}
+				overlay->readings.push_back(temp);
+			}
+			else {
+				if (overlay->readings.size()) {
+					overlay->readings.clear();
+					overlay->readings.shrink_to_fit();
+				}
+			}
+			mutexUnlock(&overlay->fpsGraphMutex);
+			svcSleepThread(1'000'000'000 / 15);  // 60 Hz
+			continue;
+        }
+    }
+    virtual tsl::elm::Element* createUI() override {
+        rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
+        auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+            drawGradientText(renderer, Variables, 4, 14, w, h);
+            drawGradientTextB(renderer, VariablesB, 4, 30, w, h);
+        });
+	auto FpsGraph = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+		switch(settings.setPos) {
+			case 1:
+				base_x = 224 - ((rectangle_width + 21) / 2);
+				break;
+			case 4:
+				base_x = 224 - ((rectangle_width + 21) / 2);
+				base_y = 360 - ((rectangle_height + 12 + 24) / 2);
+				break;
+			case 7:
+				base_x = 224 - ((rectangle_width + 21) / 2);
+				base_y = 720 - (rectangle_height + 12 + 24);
+				break;
+			case 2:
+				base_x = 448 - (rectangle_width + 21);
+				break;
+			case 5:
+				base_x = 448 - (rectangle_width + 21);
+				base_y = 360 - ((rectangle_height + 12 + 24) / 2);
+				break;
+			case 8:
+				base_x = 448 - (rectangle_width + 21);
+				base_y = 720 - (rectangle_height + 12 + 24);
+				break;
+		}
+
+		size_t last_element = readings.size() - 1;
+		for (s16 x = x_end; x > static_cast<s16>(x_end-readings.size()); x--) {
+			s32 y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
+			if (y_on_range < 0) {
+				y_on_range = 0;
+			}
+			else if (y_on_range > range) {
+				isAbove = true;
+				y_on_range = range;
+			}
+
+			s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
+			drawSimpleLine(renderer, base_x + x, base_y + y + 29, base_x + x, base_y + y_old + 29, 0xFF00d9c4);
+			drawSimpleLine(renderer, base_x + x, base_y + y + 31, base_x + x, base_y + y_old + 31, 0xFF008bdb);
+			drawSimpleLine(renderer, base_x + x, base_y + y + 33, base_x + x, base_y + y_old + 33, 0xFF0058db);
+			isAbove = false;
+			y_old = y;
+			last_element--;
+		}
+	});
+
+        auto overlayElement = new NanoOverlayElement(Status, FpsGraph);
+        rootFrame->setContent(overlayElement);
+        return rootFrame;
+    }
+	
+	virtual void update() override {
+		uint32_t current_lcd_hz = GetHzLCD();
+		uint64_t current_time = svcGetSystemTick();
+
+		lcd_hz_samples.push_back(current_lcd_hz);
+		lcd_hz_sum += current_lcd_hz;
+
+		if (current_time - last_lcd_hz_update >= 19200000) {
+			lcd_hz_avg = lcd_hz_sum / lcd_hz_samples.size();
+			lcd_hz_sum = 0;
+			lcd_hz_samples.clear();
+			last_lcd_hz_update = current_time;
+			
+			if (lcd_hz_avg > 0) {
+				TeslaFPS = lcd_hz_avg;
+				systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
+			} else {
+				TeslaFPS = settings.refreshRate > 0 ? settings.refreshRate : 60;
+				systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
+			}
+		}
+
+		if (idletick0 > systemtickfrequency_impl)
+			strcpy(CPU_Usage0, "0%");
+		if (idletick1 > systemtickfrequency_impl)
+			strcpy(CPU_Usage1, "0%");
+		if (idletick2 > systemtickfrequency_impl)
+			strcpy(CPU_Usage2, "0%");
+		if (idletick3 > systemtickfrequency_impl)
+			strcpy(CPU_Usage3, "0%");
+
+		double percent0 = (1.0 - ((double)idletick0.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+		double percent1 = (1.0 - ((double)idletick1.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+		double percent2 = (1.0 - ((double)idletick2.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+		double percent3 = (1.0 - ((double)idletick3.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+		double average_percent = (percent0 + percent1 + percent2 + percent3) / 4.0;
+
+		average_percent = std::max(0.0, average_percent);
+
+		cpu_usage_history.push_back(average_percent);
+		if (cpu_usage_history.size() > history_size) {
+			cpu_usage_history.erase(cpu_usage_history.begin());
+		}
+
+		float smoothed_average = 0;
+		for (const auto& value : cpu_usage_history) {
+			smoothed_average += value;
+		}
+		smoothed_average /= cpu_usage_history.size();
+
+		mutexLock(&mutex_Misc);
+		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "%2.0f%%%5.0f", smoothed_average, (float)CPU_Hz / 1000000);
+
+		float gpu_load = (double)GPU_Load_u / 10.0;
+
+		gpu_load_history.push_back(gpu_load);
+		if (gpu_load_history.size() > history_size) {
+			gpu_load_history.erase(gpu_load_history.begin());
+		}
+
+		float smoothed_gpu_load = 0;
+		for (const auto& value : gpu_load_history) {
+			smoothed_gpu_load += value;
+		}
+		smoothed_gpu_load /= gpu_load_history.size();
+
+		snprintf(GPU_Load_c, sizeof GPU_Load_c, "%.0f%%%4.0f", smoothed_gpu_load, (float)GPU_Hz / 1000000);
+
+		float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
+		float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
+		float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
+		float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
+		float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
+		float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
+		float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
+		float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
+		float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
+		float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
+		snprintf(RAM_all_c, sizeof RAM_all_c, "%.0f/%.0fMB", RAM_Used_all_f, RAM_Total_all_f);
+		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s@%.1f", RAM_all_c, (float)RAM_Hz / 1000000);
+		
+		if (settings.realFrequencies && realRAM_Hz) {
+			snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", realRAM_Hz / 1000000);
+		} else {
+			snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", RAM_Hz / 1000000);
+		}
+
+		if (performanceMode == ApmPerformanceMode_Normal) {
+			if (FPS > lcd_hz_avg) FPS = lcd_hz_avg;
+			snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u/%u HZ", FPS, lcd_hz_avg);
+		} else {
+			snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u", FPS);
+		}
+
+		double fps_per_watt = FPSavg / (PowerConsumption * -1);
+		char fpsPerWatt_c[64];
+		if (PowerConsumption > -1) {
+			snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " ");
+		} else {
+			int num_stars = (int)round(fps_per_watt / 4);
+			snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " FpW %2.0f ", fps_per_watt);
+			for (int i = 0; i < num_stars; ++i) {
+				strncat(fpsPerWatt_c, "★", sizeof(fpsPerWatt_c) - strlen(fpsPerWatt_c) - 1); 
+			}
+		}
+		PowerConsumption *= 1.0;
+		snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW", PowerConsumption);
+		if (hosversionAtLeast(14,0,0))
+			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
+		else
+			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
+		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.0f%%", Rotation_Duty);
+
+		bool showPower = (PowerConsumption < -0.05 || PowerConsumption > 0.05);
+
+		if (GameRunning) {
+			snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
+					 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
+
+			if (showPower) {
+				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW",
+						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption);
+			} else {
+				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s",
+						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c);
+			}
+		} else {
+			snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
+					 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
+
+			if (showPower) {
+				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW",
+						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption);
+			} else {
+				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s",
+						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c);
+			}
+		}
+		mutexUnlock(&mutex_Misc);
+	}
+	
+	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
+		if (isKeyComboPressed(keysHeld, keysDown)) {
+			TeslaFPS = 60;
+			tsl::goBack();
+			return true;
+		}
+		return false;
+	}
+};
+

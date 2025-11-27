@@ -1480,6 +1480,14 @@ struct FpsGraphSettings {
     size_t framePadding;
 };
 
+struct NanoSettings {
+    uint8_t refreshRate;
+    size_t handheldFontSize;
+    size_t dockedFontSize;
+    int setPos;
+    bool realFrequencies;
+};
+
 struct ResolutionSettings {
     uint8_t refreshRate;
     uint16_t backgroundColor;
@@ -2337,6 +2345,68 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
             if (convertStrToRGBA4444(it->second, &temp))
                 *(mapping.target) = temp;
         }
+    }
+}
+
+ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
+    // Initialize defaults
+    settings->refreshRate = 1;
+    settings->handheldFontSize = 15;
+    settings->dockedFontSize = 15;
+    settings->setPos = 0;
+    settings->realFrequencies = true;
+
+    // Open and read file efficiently
+    FILE* configFile = fopen(configIniPath, "r");
+    if (!configFile) return;
+    
+    fseek(configFile, 0, SEEK_END);
+    const long fileSize = ftell(configFile);
+    fseek(configFile, 0, SEEK_SET);
+
+    std::string fileData;
+    fileData.resize(fileSize);
+    fread(fileData.data(), 1, fileSize, configFile);
+    fclose(configFile);
+    
+    auto parsedData = ult::parseIni(fileData);
+
+    // Cache section lookup
+    auto sectionIt = parsedData.find("nano");
+    if (sectionIt == parsedData.end()) return;
+    
+    std::string key;
+    const auto& section = sectionIt->second;
+
+    // Process refresh_rate
+    auto it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+
+    // Process font sizes
+    it = section.find("handheld_font_size");
+    if (it != section.end()) {
+        settings->handheldFontSize = atol(it->second.c_str());
+    }
+
+    it = section.find("docked_font_size");
+    if (it != section.end()) {
+        settings->dockedFontSize = atol(it->second.c_str());
+    }
+
+    // Process setPos (position)
+    it = section.find("set_pos");
+    if (it != section.end()) {
+        settings->setPos = atol(it->second.c_str());
+    }
+
+    // Process real_frequencies
+    it = section.find("real_freqs");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->realFrequencies = (key == "TRUE");
     }
 }
 

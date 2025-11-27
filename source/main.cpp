@@ -13,6 +13,7 @@ static std::string lastSelectedItem;
 #include "modes/Full.hpp"
 #include "modes/Mini.hpp"
 #include "modes/Micro.hpp"
+#include "modes/Nano.hpp"
 #include "modes/Battery.hpp"
 #include "modes/Misc.hpp"
 #include "modes/Resolutions.hpp"
@@ -262,6 +263,18 @@ public:
                 return false;
             });
             list->addItem(Micro);
+
+            auto* Nano = new tsl::elm::ListItem("Nano");
+            Nano->disableClickAnimation();
+            Nano->setClickListener([](uint64_t keys) {
+                if (keys & KEY_A) {
+                    lastMode = "nano";
+                    tsl::swapTo<NanoOverlay>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(Nano);
         }
         if (SaltySD) {
             //auto* Graphs = new tsl::elm::ListItem("FPS");
