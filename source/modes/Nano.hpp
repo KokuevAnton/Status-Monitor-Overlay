@@ -246,6 +246,10 @@ public:
 		tsl::hlp::requestForeground(false);
 		FullMode = false;
 		
+		if (settings.disableScreenshots) {
+			tsl::gfx::Renderer::get().removeScreenshotStacks();
+		}
+		
 		TeslaFPS = 60;
 		systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
 		
@@ -264,6 +268,9 @@ public:
 		CloseThreads();
 		FullMode = true;
 		tsl::hlp::requestForeground(true);
+		if (settings.disableScreenshots) {
+			tsl::gfx::Renderer::get().addScreenshotStacks();
+		}
 		deactivateOriginalFooter = false;
     }
 	
@@ -354,6 +361,38 @@ public:
 				break;
 		}
 
+		// Calculate graph colors based on gradient mode
+		u32 lineColor1, lineColor2, lineColor3;
+		if (settings.useGradient) {
+			// Use gradient colors (RGB888 format)
+			lineColor1 = 0xFF000000 | settings.gradientStartColor; // Top line - start color
+			// Middle line - interpolated color (50% between start and end)
+			u8 midR = ((settings.gradientStartColor >> 16) & 0xFF) / 2 + ((settings.gradientEndColor >> 16) & 0xFF) / 2;
+			u8 midG = ((settings.gradientStartColor >> 8) & 0xFF) / 2 + ((settings.gradientEndColor >> 8) & 0xFF) / 2;
+			u8 midB = (settings.gradientStartColor & 0xFF) / 2 + (settings.gradientEndColor & 0xFF) / 2;
+			lineColor2 = 0xFF000000 | (midR << 16) | (midG << 8) | midB;
+			lineColor3 = 0xFF000000 | settings.gradientEndColor; // Bottom line - end color
+		} else {
+			// Use text color (RGBA4444 format) - convert to RGB888
+			u8 r = ((settings.textColor >> 12) & 0xF) << 4;
+			u8 g = ((settings.textColor >> 8) & 0xF) << 4;
+			u8 b = ((settings.textColor >> 4) & 0xF) << 4;
+			u32 textColorRGB = (r << 16) | (g << 8) | b;
+			
+			// Create slight variations for visual effect
+			lineColor1 = 0xFF000000 | textColorRGB; // Top line - full brightness
+			// Middle line - slightly dimmed
+			u8 midR = (r * 9) / 10;
+			u8 midG = (g * 9) / 10;
+			u8 midB = (b * 9) / 10;
+			lineColor2 = 0xFF000000 | (midR << 16) | (midG << 8) | midB;
+			// Bottom line - more dimmed
+			u8 dimR = (r * 8) / 10;
+			u8 dimG = (g * 8) / 10;
+			u8 dimB = (b * 8) / 10;
+			lineColor3 = 0xFF000000 | (dimR << 16) | (dimG << 8) | dimB;
+		}
+		
 		size_t last_element = readings.size() - 1;
 		for (s16 x = x_end; x > static_cast<s16>(x_end-readings.size()); x--) {
 			s32 y_on_range = readings[last_element].value + std::abs(rectangle_range_min) + 1;
@@ -366,9 +405,9 @@ public:
 			}
 
 			s16 y = rectangle_y + static_cast<s16>(std::lround((float)rectangle_height * ((float)(range - y_on_range) / (float)range)));
-			drawSimpleLine(renderer, base_x + x, base_y + y + 29, base_x + x, base_y + y_old + 29, 0xFF00d9c4);
-			drawSimpleLine(renderer, base_x + x, base_y + y + 31, base_x + x, base_y + y_old + 31, 0xFF008bdb);
-			drawSimpleLine(renderer, base_x + x, base_y + y + 33, base_x + x, base_y + y_old + 33, 0xFF0058db);
+			drawSimpleLine(renderer, base_x + x, base_y + y + 29, base_x + x, base_y + y_old + 29, lineColor1);
+			drawSimpleLine(renderer, base_x + x, base_y + y + 31, base_x + x, base_y + y_old + 31, lineColor2);
+			drawSimpleLine(renderer, base_x + x, base_y + y + 33, base_x + x, base_y + y_old + 33, lineColor3);
 			isAbove = false;
 			y_old = y;
 			last_element--;

@@ -1512,6 +1512,7 @@ struct NanoSettings {
     uint32_t gradientStartColor; // Start color for gradient (RGB888)
     uint32_t gradientEndColor; // End color for gradient (RGB888)
     bool showBatteryTime; // Show battery time estimate
+    bool disableScreenshots; // Disable overlay on screenshots/recordings
 };
 
 struct ResolutionSettings {
@@ -2382,10 +2383,11 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
     settings->realFrequencies = true;
     convertStrToRGBA4444("#FFFF", &(settings->textColor)); // Default white
     settings->updateRate = 60; // Default 60 Hz
-    settings->useGradient = false; // Default no gradient
+    settings->useGradient = true; // Default no gradient
     settings->gradientStartColor = 0x008bdb; // Default blue (RGB888)
     settings->gradientEndColor = 0x00d9c4; // Default cyan (RGB888)
     settings->showBatteryTime = true; // Default show battery time
+    settings->disableScreenshots = false; // Default screenshots enabled
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2477,6 +2479,14 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showBatteryTime = (key == "TRUE");
+    }
+    
+    // Process disable_screenshots
+    it = section.find("disable_screenshots");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->disableScreenshots = (key != "FALSE");
     }
 }
 
