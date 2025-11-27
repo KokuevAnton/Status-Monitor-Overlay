@@ -651,12 +651,6 @@ public:
 			tsl::goBack();
 			return true;
 		}
-		if (keysDown & KEY_Y) {
-			triggerRumbleClick.store(true, std::memory_order_release);
-			triggerSettingsSound.store(true, std::memory_order_release);
-			tsl::swapTo<ConfiguratorOverlay>("Nano");
-			return true;
-		}
 		return false;
 	}
 };
