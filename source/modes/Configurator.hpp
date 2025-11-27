@@ -297,6 +297,7 @@ private:
     bool isFPSGraphMode;
     bool isGameResolutionsMode;
     bool isFPSCounterMode;
+    bool isNanoMode;
     
 public:
     TogglesConfig(const std::string& mode) : modeName(mode) {
@@ -306,6 +307,7 @@ public:
         isFPSGraphMode = (mode == "FPS Graph");
         isGameResolutionsMode = (mode == "Game Resolutions");
         isFPSCounterMode = (mode == "FPS Counter");
+        isNanoMode = (mode == "Nano");
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -494,6 +496,25 @@ public:
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("fps-counter"));
             disableScreenshots->setStateChangedListener([this](bool state) {
                 ult::setIniFileValue(configIniPath, "fps-counter", "disable_screenshots", state ? "true" : "false");
+            });
+            list->addItem(disableScreenshots);
+        } else if (isNanoMode) {
+            // Nano mode: show_battery_time and disable_screenshots
+            auto getCurrentShowBatteryTime = [this]() -> bool {
+                std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "show_battery_time");
+                convertToUpper(value);
+                return value != "FALSE"; // Default is true
+            };
+            
+            auto* showBatteryTime = new tsl::elm::ToggleListItem("Show Battery Time", getCurrentShowBatteryTime());
+            showBatteryTime->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "nano", "show_battery_time", state ? "true" : "false");
+            });
+            list->addItem(showBatteryTime);
+            
+            auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots("nano"));
+            disableScreenshots->setStateChangedListener([this](bool state) {
+                ult::setIniFileValue(configIniPath, "nano", "disable_screenshots", state ? "true" : "false");
             });
             list->addItem(disableScreenshots);
         }

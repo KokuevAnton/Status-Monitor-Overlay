@@ -226,6 +226,7 @@ public:
 		lastUseGradient = settings.useGradient;
 		lastGradientStartColor = settings.gradientStartColor;
 		lastGradientEndColor = settings.gradientEndColor;
+		
 		switch(settings.setPos) {
 			case 1:
 			case 4:
@@ -545,28 +546,60 @@ public:
 			snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.0f%%", Rotation_Duty);
 
 			bool showPower = (PowerConsumption < -0.05 || PowerConsumption > 0.05);
+			
+			// Format battery time estimate
+			char remainingBatteryLife[8] = "--:--";
+			if (settings.showBatteryTime) {
+				mutexLock(&mutex_BatteryChecker);
+				const float drawW = (fabsf(PowerConsumption) < 0.01f) ? 0.0f : PowerConsumption;
+				if (batTimeEstimate >= 0 && !(drawW <= 0.01f && drawW >= -0.01f)) {
+					snprintf(remainingBatteryLife, sizeof(remainingBatteryLife),
+							 "%d:%02d", batTimeEstimate / 60, batTimeEstimate % 60);
+				}
+				mutexUnlock(&mutex_BatteryChecker);
+			}
 
 			if (GameRunning) {
 				snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
 						 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
 
 				if (showPower) {
-					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW",
-							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption);
+					if (settings.showBatteryTime) {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW [%s]",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption, remainingBatteryLife);
+					} else {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption);
+					}
 				} else {
-					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s",
-							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c);
+					if (settings.showBatteryTime) {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s [%s]",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, remainingBatteryLife);
+					} else {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c);
+					}
 				}
 			} else {
 				snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
 						 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
 
 				if (showPower) {
-					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW",
-							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption);
+					if (settings.showBatteryTime) {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW [%s]",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption, remainingBatteryLife);
+					} else {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption);
+					}
 				} else {
-					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s",
-							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c);
+					if (settings.showBatteryTime) {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s [%s]",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, remainingBatteryLife);
+					} else {
+						snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s",
+								 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c);
+					}
 				}
 			}
 			mutexUnlock(&mutex_Misc);

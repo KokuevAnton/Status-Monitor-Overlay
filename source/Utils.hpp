@@ -1511,6 +1511,7 @@ struct NanoSettings {
     bool useGradient; // Use gradient text color
     uint32_t gradientStartColor; // Start color for gradient (RGB888)
     uint32_t gradientEndColor; // End color for gradient (RGB888)
+    bool showBatteryTime; // Show battery time estimate
 };
 
 struct ResolutionSettings {
@@ -2384,6 +2385,7 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
     settings->useGradient = false; // Default no gradient
     settings->gradientStartColor = 0x008bdb; // Default blue (RGB888)
     settings->gradientEndColor = 0x00d9c4; // Default cyan (RGB888)
+    settings->showBatteryTime = true; // Default show battery time
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2467,6 +2469,14 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
     it = section.find("update_rate");
     if (it != section.end()) {
         settings->updateRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+    
+    // Process show_battery_time
+    it = section.find("show_battery_time");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showBatteryTime = (key == "TRUE");
     }
 }
 
