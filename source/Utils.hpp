@@ -495,9 +495,12 @@ void CloseBatteryThread() {
 void gpuLoadThread(void*) {
     #define gpu_samples_average 10
     if (!GPULoadPerFrame && R_SUCCEEDED(nvCheck)) do {
-        u32 temp;
-        if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp)))
-            GPU_Load_u = ((GPU_Load_u * (gpu_samples_average-1)) + temp) / gpu_samples_average;
+        // Only read GPU load when game is running to avoid hangs when game closes
+        if (GameRunning) {
+            u32 temp;
+            if (R_SUCCEEDED(nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &temp)))
+                GPU_Load_u = ((GPU_Load_u * (gpu_samples_average-1)) + temp) / gpu_samples_average;
+        }
     } while(!leventWait(&threadexit, 16'666'000));
 }
 
@@ -541,9 +544,18 @@ void Misc(void*) {
     }
     
     do {
+        // Early exit check - if game closed, skip operations and wait for exit signal
+        if (!GameRunning.load(std::memory_order_acquire)) {
+            // Game closed - wait for exit signal with shorter timeout to respond faster
+            if (leventWait(&threadexit, 100'000'000)) { // 100ms timeout
+                break; // Exit signal received
+            }
+            continue; // Check again
+        }
+        
         mutexLock(&mutex_Misc);
         
-        // CPU, GPU and RAM Frequency
+        // CPU, GPU and RAM Frequency - safe to read even when game closes
         if (R_SUCCEEDED(clkrstCheck)) {
             ClkrstSession clkSession;
             if (R_SUCCEEDED(clkrstOpenSession(&clkSession, PcvModuleId_CpuBus, 3))) {
@@ -642,7 +654,7 @@ void Misc(void*) {
             realRAM_mV = vddq_mV * 100000 + vdd2_mV * 10;
         }
         
-        // Temperatures
+        // Temperatures - safe to read even when game closes
         if (R_SUCCEEDED(i2cCheck)) {
             Tmp451GetSocTemp(&SOC_temperatureF);
             Tmp451GetPcbTemp(&PCB_temperatureF);
@@ -651,7 +663,7 @@ void Misc(void*) {
             tcGetSkinTemperatureMilliC(&skin_temperaturemiliC);
         }
         
-        // RAM Memory Used
+        // RAM Memory Used - safe to read even when game closes
         if (R_SUCCEEDED(Hinted)) {
             svcGetSystemInfo(&RAM_Total_application_u, 0, INVALID_HANDLE, 0);
             svcGetSystemInfo(&RAM_Total_applet_u, 0, INVALID_HANDLE, 1);
@@ -677,8 +689,8 @@ void Misc(void*) {
             }
         }
         
-        // GPU Load
-        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame) {
+        // GPU Load - only read when game is running to avoid hangs when game closes
+        if (R_SUCCEEDED(nvCheck) && GPULoadPerFrame && GameRunning) {
             nvIoctl(fd, NVGPU_GPU_IOCTL_PMU_GET_GPU_LOAD, &GPU_Load_u);
         }
         

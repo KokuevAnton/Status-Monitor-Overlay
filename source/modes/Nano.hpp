@@ -520,16 +520,17 @@ public:
 				snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u", FPS);
 			}
 
-			double fps_per_watt = FPSavg / (PowerConsumption * -1);
 			char fpsPerWatt_c[64];
-			if (PowerConsumption > -1) {
-				snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " ");
-			} else {
+			// Only calculate FpW when FPS data is available (FPSavg < 254 means game is running)
+			if (FPSavg < 254 && PowerConsumption < -1) {
+				double fps_per_watt = FPSavg / (PowerConsumption * -1);
 				int num_stars = (int)round(fps_per_watt / 4);
 				snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " FpW %2.0f ", fps_per_watt);
 				for (int i = 0; i < num_stars; ++i) {
 					strncat(fpsPerWatt_c, "★", sizeof(fpsPerWatt_c) - strlen(fpsPerWatt_c) - 1); 
 				}
+			} else {
+				snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " ");
 			}
 			PowerConsumption *= 1.0;
 			snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW", PowerConsumption);
