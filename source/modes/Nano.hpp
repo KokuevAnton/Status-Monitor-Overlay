@@ -3,6 +3,7 @@
 #include "../include/t210.h"
 
 class MainMenu;
+class ConfiguratorOverlay;
 
 class NanoOverlayElement : public tsl::elm::Element {
 public:
@@ -83,48 +84,107 @@ private:
     uint32_t lcd_hz_sum;
     uint32_t lcd_hz_avg;
     uint64_t last_lcd_hz_update;
+    uint64_t last_indicator_update = 0;
     tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
 		
 	void drawGradientText(tsl::gfx::Renderer *renderer, const char* text, u32 x, u32 y, u16 w, u16 h) {
-		u32 startColor = 0x008bdb;
-		u32 endColor = 0x00d9c4;
 		size_t textLength = strlen(text);
 		
-		for (size_t i = 0; i < textLength; i++) {
-			float progress = static_cast<float>(i) / (textLength - 1);
+		if (settings.useGradient && textLength > 1) {
+			// Use gradient colors (RGB888 format)
+			u32 startColor = settings.gradientStartColor;
+			u32 endColor = settings.gradientEndColor;
 			
-			u8 r = static_cast<u8>((1 - progress) * ((startColor >> 16) & 0xFF) + progress * ((endColor >> 16) & 0xFF));
-			u8 g = static_cast<u8>((1 - progress) * ((startColor >> 8) & 0xFF) + progress * ((endColor >> 8) & 0xFF));
-			u8 b = static_cast<u8>((1 - progress) * (startColor & 0xFF) + progress * (endColor & 0xFF));
+			u8 startR = (startColor >> 16) & 0xFF;
+			u8 startG = (startColor >> 8) & 0xFF;
+			u8 startB = startColor & 0xFF;
 			
-			tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+			u8 endR = (endColor >> 16) & 0xFF;
+			u8 endG = (endColor >> 8) & 0xFF;
+			u8 endB = endColor & 0xFF;
 			
-			char buffer[2] = {text[i], '\0'};
-			renderer->drawString(buffer, false, x, y, 15, color);
+			for (size_t i = 0; i < textLength; i++) {
+				float progress = textLength > 1 ? static_cast<float>(i) / (textLength - 1) : 0.0f;
+				
+				u8 r = static_cast<u8>((1 - progress) * startR + progress * endR);
+				u8 g = static_cast<u8>((1 - progress) * startG + progress * endG);
+				u8 b = static_cast<u8>((1 - progress) * startB + progress * endB);
+				
+				tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+				
+				char buffer[2] = {text[i], '\0'};
+				renderer->drawString(buffer, false, x, y, fontsize, color);
+				
+				auto [width, height] = renderer->drawString(buffer, false, 0, 0, fontsize, tsl::style::color::ColorTransparent);
+				x += width;
+			}
+		} else {
+			// Use solid color
+			u16 textColorValue = settings.textColor;
+			u8 r = ((textColorValue >> 12) & 0xF) << 4;
+			u8 g = ((textColorValue >> 8) & 0xF) << 4;
+			u8 b = ((textColorValue >> 4) & 0xF) << 4;
+			u8 a = (textColorValue & 0xF) << 4;
 			
-			auto [width, height] = renderer->drawString(buffer, false, 0, 0, 16, tsl::style::color::ColorTransparent);
-			x += width;
+			for (size_t i = 0; i < textLength; i++) {
+				tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), static_cast<u8>(a >> 4));
+				
+				char buffer[2] = {text[i], '\0'};
+				renderer->drawString(buffer, false, x, y, fontsize, color);
+				
+				auto [width, height] = renderer->drawString(buffer, false, 0, 0, fontsize, tsl::style::color::ColorTransparent);
+				x += width;
+			}
 		}
 	}		
 	void drawGradientTextB(tsl::gfx::Renderer *renderer, const char* text, u32 x, u32 y, u16 w, u16 h) {
-		u32 startColor = 0x008bdb;
-		u32 endColor = 0x00d9c4;
 		size_t textLength = strlen(text);
 		
-		for (size_t i = 0; i < textLength; i++) {
-			float progress = static_cast<float>(i) / (textLength - 1);
+		if (settings.useGradient && textLength > 1) {
+			// Use gradient colors (RGB888 format)
+			u32 startColor = settings.gradientStartColor;
+			u32 endColor = settings.gradientEndColor;
 			
-			u8 r = static_cast<u8>((1 - progress) * ((startColor >> 16) & 0xFF) + progress * ((endColor >> 16) & 0xFF));
-			u8 g = static_cast<u8>((1 - progress) * ((startColor >> 8) & 0xFF) + progress * ((endColor >> 8) & 0xFF));
-			u8 b = static_cast<u8>((1 - progress) * (startColor & 0xFF) + progress * (endColor & 0xFF));
+			u8 startR = (startColor >> 16) & 0xFF;
+			u8 startG = (startColor >> 8) & 0xFF;
+			u8 startB = startColor & 0xFF;
 			
-			tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+			u8 endR = (endColor >> 16) & 0xFF;
+			u8 endG = (endColor >> 8) & 0xFF;
+			u8 endB = endColor & 0xFF;
 			
-			char buffer[2] = {text[i], '\0'};
-			renderer->drawString(buffer, false, x, y, 15, color);
+			for (size_t i = 0; i < textLength; i++) {
+				float progress = textLength > 1 ? static_cast<float>(i) / (textLength - 1) : 0.0f;
+				
+				u8 r = static_cast<u8>((1 - progress) * startR + progress * endR);
+				u8 g = static_cast<u8>((1 - progress) * startG + progress * endG);
+				u8 b = static_cast<u8>((1 - progress) * startB + progress * endB);
+				
+				tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), 0xF);
+				
+				char buffer[2] = {text[i], '\0'};
+				renderer->drawString(buffer, false, x, y, fontsize, color);
+				
+				auto [width, height] = renderer->drawString(buffer, false, 0, 0, fontsize, tsl::style::color::ColorTransparent);
+				x += width;
+			}
+		} else {
+			// Use solid color
+			u16 textColorValue = settings.textColor;
+			u8 r = ((textColorValue >> 12) & 0xF) << 4;
+			u8 g = ((textColorValue >> 8) & 0xF) << 4;
+			u8 b = ((textColorValue >> 4) & 0xF) << 4;
+			u8 a = (textColorValue & 0xF) << 4;
 			
-			auto [width, height] = renderer->drawString(buffer, false, 0, 0, 16, tsl::style::color::ColorTransparent);
-			x += width;
+			for (size_t i = 0; i < textLength; i++) {
+				tsl::Color color(static_cast<u8>(r >> 4), static_cast<u8>(g >> 4), static_cast<u8>(b >> 4), static_cast<u8>(a >> 4));
+				
+				char buffer[2] = {text[i], '\0'};
+				renderer->drawString(buffer, false, x, y, fontsize, color);
+				
+				auto [width, height] = renderer->drawString(buffer, false, 0, 0, fontsize, tsl::style::color::ColorTransparent);
+				x += width;
+			}
 		}
 	}
 	
@@ -190,31 +250,56 @@ public:
 	
 	static void FpsGraphUpdate(void* arg) {
 		NanoOverlay* overlay = static_cast<NanoOverlay*>(arg);
+		static uint64_t lastUpdateTime = 0;
+		static uint64_t lastFrame = 0;
+		const uint64_t updateInterval15Hz = systemtickfrequency / 15; // ~66.7ms for 15 Hz
 		while (!overlay->fpsGraphThreadExit) {
 			mutexLock(&overlay->fpsGraphMutex);
+			static float FPSavg_old = 0;
 			stats temp = {0, false};
+			uint64_t currentTime = svcGetSystemTick();
+			bool shouldUpdate = false;
 			
-			// Always update graph, even if value doesn't change (for continuous scrolling)
-			snprintf(overlay->FPSavg_c, sizeof overlay->FPSavg_c, "%2.1f",  FPSavg);
-			if (FPSavg < 254) {
-				if ((s16)(overlay->readings.size()) >= overlay->rectangle_width) {
-					overlay->readings.erase(overlay->readings.begin());
-				}
-				float whole = std::round(FPSavg);
-				temp.value = static_cast<s16>(std::lround(FPSavg));
-				if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
-					temp.zero_rounded = true;
-				}
-				overlay->readings.push_back(temp);
+			// Check if new frame data is available (game is running)
+			if (lastFrame == lastFrameNumber) {
+				// No new frames, don't update graph
+				mutexUnlock(&overlay->fpsGraphMutex);
+				svcSleepThread(1'000'000'000 / 60);
+				continue;
 			}
-			else {
-				if (overlay->readings.size()) {
+			lastFrame = lastFrameNumber;
+			
+			if (FPSavg_old != FPSavg) {
+				// FPS changed, update immediately
+				shouldUpdate = true;
+				FPSavg_old = FPSavg;
+				lastUpdateTime = currentTime;
+			} else if (currentTime - lastUpdateTime >= updateInterval15Hz) {
+				// FPS didn't change, but ~66.7ms passed (15 Hz update rate)
+				shouldUpdate = true;
+				lastUpdateTime = currentTime;
+			}
+			
+			if (shouldUpdate) {
+				snprintf(overlay->FPSavg_c, sizeof overlay->FPSavg_c, "%2.1f",  FPSavg);
+				if (FPSavg < 254) {
+					if ((s16)(overlay->readings.size()) >= overlay->rectangle_width) {
+						overlay->readings.erase(overlay->readings.begin());
+					}
+					float whole = std::round(FPSavg);
+					temp.value = static_cast<s16>(std::lround(FPSavg));
+					if (FPSavg < whole+0.04 && FPSavg > whole-0.05) {
+						temp.zero_rounded = true;
+					}
+					overlay->readings.push_back(temp);
+				}
+				else {
 					overlay->readings.clear();
 					overlay->readings.shrink_to_fit();
 				}
 			}
 			mutexUnlock(&overlay->fpsGraphMutex);
-			svcSleepThread(1'000'000'000 / 15);  // 60 Hz
+			svcSleepThread(1'000'000'000 / 60);
 			continue;
         }
     }
@@ -277,6 +362,16 @@ public:
     }
 	
 	virtual void update() override {
+		// Reload settings if they changed
+		GetConfigSettings(&settings);
+		
+		// Update fontsize based on performance mode
+		apmGetPerformanceMode(&performanceMode);
+		if (performanceMode == ApmPerformanceMode_Normal) {
+			fontsize = settings.handheldFontSize;
+		}
+		else fontsize = settings.dockedFontSize;
+		
 		uint32_t current_lcd_hz = GetHzLCD();
 		uint64_t current_time = svcGetSystemTick();
 
@@ -293,134 +388,148 @@ public:
 				TeslaFPS = lcd_hz_avg;
 				systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
 			} else {
-				TeslaFPS = settings.refreshRate > 0 ? settings.refreshRate : 60;
+				TeslaFPS = 60; // Default 60 Hz if LCD frequency cannot be determined
 				systemtickfrequency_impl = systemtickfrequency / TeslaFPS;
 			}
 		}
 
-		if (idletick0 > systemtickfrequency_impl)
-			strcpy(CPU_Usage0, "0%");
-		if (idletick1 > systemtickfrequency_impl)
-			strcpy(CPU_Usage1, "0%");
-		if (idletick2 > systemtickfrequency_impl)
-			strcpy(CPU_Usage2, "0%");
-		if (idletick3 > systemtickfrequency_impl)
-			strcpy(CPU_Usage3, "0%");
-
-		double percent0 = (1.0 - ((double)idletick0.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
-		double percent1 = (1.0 - ((double)idletick1.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
-		double percent2 = (1.0 - ((double)idletick2.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
-		double percent3 = (1.0 - ((double)idletick3.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
-		double average_percent = (percent0 + percent1 + percent2 + percent3) / 4.0;
-
-		average_percent = std::max(0.0, average_percent);
-
-		cpu_usage_history.push_back(average_percent);
-		if (cpu_usage_history.size() > history_size) {
-			cpu_usage_history.erase(cpu_usage_history.begin());
-		}
-
-		float smoothed_average = 0;
-		for (const auto& value : cpu_usage_history) {
-			smoothed_average += value;
-		}
-		smoothed_average /= cpu_usage_history.size();
-
-		mutexLock(&mutex_Misc);
-		snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "%2.0f%%%5.0f", smoothed_average, (float)CPU_Hz / 1000000);
-
-		float gpu_load = (double)GPU_Load_u / 10.0;
-
-		gpu_load_history.push_back(gpu_load);
-		if (gpu_load_history.size() > history_size) {
-			gpu_load_history.erase(gpu_load_history.begin());
-		}
-
-		float smoothed_gpu_load = 0;
-		for (const auto& value : gpu_load_history) {
-			smoothed_gpu_load += value;
-		}
-		smoothed_gpu_load /= gpu_load_history.size();
-
-		snprintf(GPU_Load_c, sizeof GPU_Load_c, "%.0f%%%4.0f", smoothed_gpu_load, (float)GPU_Hz / 1000000);
-
-		float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
-		float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
-		float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
-		float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
-		float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
-		float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
-		float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
-		float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
-		float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
-		float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
-		snprintf(RAM_all_c, sizeof RAM_all_c, "%.0f/%.0fMB", RAM_Used_all_f, RAM_Total_all_f);
-		snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s@%.1f", RAM_all_c, (float)RAM_Hz / 1000000);
+		// Control update rate for indicators using settings.updateRate
+		uint64_t updateInterval = systemtickfrequency / settings.updateRate;
+		bool shouldUpdateIndicators = (current_time - last_indicator_update >= updateInterval);
 		
-		if (settings.realFrequencies && realRAM_Hz) {
-			snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", realRAM_Hz / 1000000);
-		} else {
-			snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", RAM_Hz / 1000000);
-		}
+		if (shouldUpdateIndicators) {
+			last_indicator_update = current_time;
 
-		if (performanceMode == ApmPerformanceMode_Normal) {
-			if (FPS > lcd_hz_avg) FPS = lcd_hz_avg;
-			snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u/%u HZ", FPS, lcd_hz_avg);
-		} else {
-			snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u", FPS);
-		}
+			if (idletick0 > systemtickfrequency_impl)
+				strcpy(CPU_Usage0, "0%");
+			if (idletick1 > systemtickfrequency_impl)
+				strcpy(CPU_Usage1, "0%");
+			if (idletick2 > systemtickfrequency_impl)
+				strcpy(CPU_Usage2, "0%");
+			if (idletick3 > systemtickfrequency_impl)
+				strcpy(CPU_Usage3, "0%");
 
-		double fps_per_watt = FPSavg / (PowerConsumption * -1);
-		char fpsPerWatt_c[64];
-		if (PowerConsumption > -1) {
-			snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " ");
-		} else {
-			int num_stars = (int)round(fps_per_watt / 4);
-			snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " FpW %2.0f ", fps_per_watt);
-			for (int i = 0; i < num_stars; ++i) {
-				strncat(fpsPerWatt_c, "★", sizeof(fpsPerWatt_c) - strlen(fpsPerWatt_c) - 1); 
+			double percent0 = (1.0 - ((double)idletick0.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+			double percent1 = (1.0 - ((double)idletick1.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+			double percent2 = (1.0 - ((double)idletick2.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+			double percent3 = (1.0 - ((double)idletick3.load(std::memory_order_acquire) / systemtickfrequency_impl)) * 100;
+			double average_percent = (percent0 + percent1 + percent2 + percent3) / 4.0;
+
+			average_percent = std::max(0.0, average_percent);
+
+			cpu_usage_history.push_back(average_percent);
+			if (cpu_usage_history.size() > history_size) {
+				cpu_usage_history.erase(cpu_usage_history.begin());
 			}
-		}
-		PowerConsumption *= 1.0;
-		snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW", PowerConsumption);
-		if (hosversionAtLeast(14,0,0))
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
-		else
-			snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
-		snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.0f%%", Rotation_Duty);
 
-		bool showPower = (PowerConsumption < -0.05 || PowerConsumption > 0.05);
+			float smoothed_average = 0;
+			for (const auto& value : cpu_usage_history) {
+				smoothed_average += value;
+			}
+			smoothed_average /= cpu_usage_history.size();
 
-		if (GameRunning) {
-			snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
-					 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
+			mutexLock(&mutex_Misc);
+			snprintf(CPU_compressed_c, sizeof CPU_compressed_c, "%2.0f%%%5.0f", smoothed_average, (float)CPU_Hz / 1000000);
 
-			if (showPower) {
-				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW",
-						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption);
+			float gpu_load = (double)GPU_Load_u / 10.0;
+
+			gpu_load_history.push_back(gpu_load);
+			if (gpu_load_history.size() > history_size) {
+				gpu_load_history.erase(gpu_load_history.begin());
+			}
+
+			float smoothed_gpu_load = 0;
+			for (const auto& value : gpu_load_history) {
+				smoothed_gpu_load += value;
+			}
+			smoothed_gpu_load /= gpu_load_history.size();
+
+			snprintf(GPU_Load_c, sizeof GPU_Load_c, "%.0f%%%4.0f", smoothed_gpu_load, (float)GPU_Hz / 1000000);
+
+			float RAM_Total_application_f = (float)RAM_Total_application_u / 1024 / 1024;
+			float RAM_Total_applet_f = (float)RAM_Total_applet_u / 1024 / 1024;
+			float RAM_Total_system_f = (float)RAM_Total_system_u / 1024 / 1024;
+			float RAM_Total_systemunsafe_f = (float)RAM_Total_systemunsafe_u / 1024 / 1024;
+			float RAM_Total_all_f = RAM_Total_application_f + RAM_Total_applet_f + RAM_Total_system_f + RAM_Total_systemunsafe_f;
+			float RAM_Used_application_f = (float)RAM_Used_application_u / 1024 / 1024;
+			float RAM_Used_applet_f = (float)RAM_Used_applet_u / 1024 / 1024;
+			float RAM_Used_system_f = (float)RAM_Used_system_u / 1024 / 1024;
+			float RAM_Used_systemunsafe_f = (float)RAM_Used_systemunsafe_u / 1024 / 1024;
+			float RAM_Used_all_f = RAM_Used_application_f + RAM_Used_applet_f + RAM_Used_system_f + RAM_Used_systemunsafe_f;
+			snprintf(RAM_all_c, sizeof RAM_all_c, "%.0f/%.0fMB", RAM_Used_all_f, RAM_Total_all_f);
+			snprintf(RAM_var_compressed_c, sizeof RAM_var_compressed_c, "%s@%.1f", RAM_all_c, (float)RAM_Hz / 1000000);
+		
+			if (settings.realFrequencies && realRAM_Hz) {
+				snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", realRAM_Hz / 1000000);
 			} else {
-				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s",
-						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c);
+				snprintf(RAM_freq_c, sizeof RAM_freq_c, "%d", RAM_Hz / 1000000);
 			}
-		} else {
-			snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
-					 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
 
-			if (showPower) {
-				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW",
-						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption);
+			if (performanceMode == ApmPerformanceMode_Normal) {
+				if (FPS > lcd_hz_avg) FPS = lcd_hz_avg;
+				snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u/%u HZ", FPS, lcd_hz_avg);
 			} else {
-				snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s",
-						 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c);
+				snprintf(FPS_var_compressed_c, sizeof FPS_var_compressed_c, "%u", FPS);
 			}
+
+			double fps_per_watt = FPSavg / (PowerConsumption * -1);
+			char fpsPerWatt_c[64];
+			if (PowerConsumption > -1) {
+				snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " ");
+			} else {
+				int num_stars = (int)round(fps_per_watt / 4);
+				snprintf(fpsPerWatt_c, sizeof(fpsPerWatt_c), " FpW %2.0f ", fps_per_watt);
+				for (int i = 0; i < num_stars; ++i) {
+					strncat(fpsPerWatt_c, "★", sizeof(fpsPerWatt_c) - strlen(fpsPerWatt_c) - 1); 
+				}
+			}
+			PowerConsumption *= 1.0;
+			snprintf(SoCPCB_temperature_c, sizeof SoCPCB_temperature_c, "%0.2fW", PowerConsumption);
+			if (hosversionAtLeast(14,0,0))
+				snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
+			else
+				snprintf(skin_temperature_c, sizeof skin_temperature_c, "%2.0f\u00B0C", (float)skin_temperaturemiliC / 1000);
+			snprintf(Rotation_SpeedLevel_c, sizeof Rotation_SpeedLevel_c, "%2.0f%%", Rotation_Duty);
+
+			bool showPower = (PowerConsumption < -0.05 || PowerConsumption > 0.05);
+
+			if (GameRunning) {
+				snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
+						 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
+
+				if (showPower) {
+					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s %+.1fW",
+							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c, PowerConsumption);
+				} else {
+					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %s",
+							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, fpsPerWatt_c);
+				}
+			} else {
+				snprintf(Variables, sizeof Variables, "GPU %s  CPU%s  MEM %s",
+						 GPU_Load_c, CPU_compressed_c, RAM_freq_c);
+
+				if (showPower) {
+					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s %+.1fW",
+							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c, PowerConsumption);
+				} else {
+					snprintf(VariablesB, sizeof VariablesB, "FPS %s  %s%s",
+							 FPS_var_compressed_c, skin_temperature_c, Rotation_SpeedLevel_c);
+				}
+			}
+			mutexUnlock(&mutex_Misc);
 		}
-		mutexUnlock(&mutex_Misc);
 	}
 	
 	virtual bool handleInput(uint64_t keysDown, uint64_t keysHeld, touchPosition touchInput, JoystickPosition leftJoyStick, JoystickPosition rightJoyStick) override {
 		if (isKeyComboPressed(keysHeld, keysDown)) {
 			TeslaFPS = 60;
 			tsl::goBack();
+			return true;
+		}
+		if (keysDown & KEY_Y) {
+			triggerRumbleClick.store(true, std::memory_order_release);
+			triggerSettingsSound.store(true, std::memory_order_release);
+			tsl::swapTo<ConfiguratorOverlay>("Nano");
 			return true;
 		}
 		return false;

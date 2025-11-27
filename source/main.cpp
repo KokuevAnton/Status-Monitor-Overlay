@@ -272,6 +272,12 @@ public:
                     tsl::swapTo<NanoOverlay>();
                     return true;
                 }
+                if (keys & KEY_Y) {
+                    triggerRumbleClick.store(true, std::memory_order_release);
+                    triggerSettingsSound.store(true, std::memory_order_release);
+                    tsl::swapTo<ConfiguratorOverlay>("Nano");
+                    return true;
+                }
                 return false;
             });
             list->addItem(Nano);

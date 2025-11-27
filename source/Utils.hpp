@@ -1357,6 +1357,27 @@ bool convertStrToRGBA4444(std::string hexColor, uint16_t* returnValue) {
     return false;
 }
 
+bool convertStrToRGB888(std::string hexColor, uint32_t* returnValue) {
+    // Check if # is present and format is #RRGGBB
+    if (hexColor.size() != 7 || hexColor[0] != '#')
+        return false;
+    
+    std::string rgb = hexColor.substr(1); // Remove #
+    // Validate hex characters
+    for (char c : rgb) {
+        if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
+            return false;
+    }
+    
+    char* endPtr;
+    unsigned long value = strtoul(rgb.c_str(), &endPtr, 16);
+    if (*endPtr != '\0')
+        return false;
+    
+    *returnValue = static_cast<uint32_t>(value);
+    return true;
+}
+
 struct FullSettings {
     uint8_t refreshRate;
     bool setPosRight;
@@ -1481,11 +1502,15 @@ struct FpsGraphSettings {
 };
 
 struct NanoSettings {
-    uint8_t refreshRate;
     size_t handheldFontSize;
     size_t dockedFontSize;
     int setPos;
     bool realFrequencies;
+    uint16_t textColor;
+    uint8_t updateRate; // Refresh rate for indicators (not graph)
+    bool useGradient; // Use gradient text color
+    uint32_t gradientStartColor; // Start color for gradient (RGB888)
+    uint32_t gradientEndColor; // End color for gradient (RGB888)
 };
 
 struct ResolutionSettings {
@@ -2350,11 +2375,15 @@ ALWAYS_INLINE void GetConfigSettings(FpsGraphSettings* settings) {
 
 ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
     // Initialize defaults
-    settings->refreshRate = 1;
     settings->handheldFontSize = 15;
     settings->dockedFontSize = 15;
     settings->setPos = 0;
     settings->realFrequencies = true;
+    convertStrToRGBA4444("#FFFF", &(settings->textColor)); // Default white
+    settings->updateRate = 60; // Default 60 Hz
+    settings->useGradient = false; // Default no gradient
+    settings->gradientStartColor = 0x008bdb; // Default blue (RGB888)
+    settings->gradientEndColor = 0x00d9c4; // Default cyan (RGB888)
 
     // Open and read file efficiently
     FILE* configFile = fopen(configIniPath, "r");
@@ -2378,14 +2407,8 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
     std::string key;
     const auto& section = sectionIt->second;
 
-    // Process refresh_rate
-    auto it = section.find("refresh_rate");
-    if (it != section.end()) {
-        settings->refreshRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
-    }
-
     // Process font sizes
-    it = section.find("handheld_font_size");
+    auto it = section.find("handheld_font_size");
     if (it != section.end()) {
         settings->handheldFontSize = atol(it->second.c_str());
     }
@@ -2407,6 +2430,43 @@ ALWAYS_INLINE void GetConfigSettings(NanoSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->realFrequencies = (key == "TRUE");
+    }
+
+    // Process text_color
+    it = section.find("text_color");
+    if (it != section.end()) {
+        convertStrToRGBA4444(it->second.c_str(), &(settings->textColor));
+    }
+
+    // Process use_gradient
+    it = section.find("use_gradient");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->useGradient = (key == "TRUE");
+    }
+
+    // Process gradient_start_color (RGB888 format: #RRGGBB)
+    it = section.find("gradient_start_color");
+    if (it != section.end()) {
+        convertStrToRGB888(it->second, &(settings->gradientStartColor));
+    }
+
+    // Process gradient_end_color (RGB888 format: #RRGGBB)
+    it = section.find("gradient_end_color");
+    if (it != section.end()) {
+        convertStrToRGB888(it->second, &(settings->gradientEndColor));
+    }
+
+    // Process refresh_rate (renamed from update_rate)
+    it = section.find("refresh_rate");
+    if (it != section.end()) {
+        settings->updateRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
+    }
+    // Also check old update_rate for backward compatibility
+    it = section.find("update_rate");
+    if (it != section.end()) {
+        settings->updateRate = std::clamp(atol(it->second.c_str()), 1L, 60L);
     }
 }
 

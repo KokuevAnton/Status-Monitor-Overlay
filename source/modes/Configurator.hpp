@@ -37,10 +37,12 @@ static tsl::elm::ListItem* lastSelectedListItem;
 // Forward declarations
 class ConfiguratorOverlay;
 class RefreshRateConfig;
+class UpdateRateConfig;
 class FontSizeConfig;
 class FontSizeSelector;
 class ColorConfig;
 class ColorSelector;
+class GradientColorSelector;
 class AlphaSelector;
 class ShowConfig;
 class TogglesConfig;
@@ -81,6 +83,7 @@ private:
     bool isFPSCounterMode;
     bool isFPSGraphMode;
     bool isGameResolutionsMode;
+    bool isNanoMode;
     
 public:
     AlphaSelector(const std::string& mode, const std::string& key, const std::string& displayTitle) 
@@ -90,6 +93,7 @@ public:
             isFPSCounterMode = (mode == "FPS Counter");
             isFPSGraphMode = (mode == "FPS Graph");
             isGameResolutionsMode = (mode == "Game Resolutions");
+            isNanoMode = (mode == "Nano");
         }
     ~AlphaSelector() {
         lastSelectedListItem = nullptr;
@@ -105,6 +109,7 @@ public:
         else if (isFPSCounterMode) section = "fps-counter";
         else if (isFPSGraphMode) section = "fps-graph";
         else if (isGameResolutionsMode) section = "game_resolutions";
+        else if (isNanoMode) section = "nano";
         
         // Get current color value and extract alpha
         std::string currentColor = ult::parseValueFromIniSection(configIniPath, section, colorKey);
@@ -686,6 +691,69 @@ private:
     }
 };
 
+// Update Rate Configuration (for Nano mode indicators)
+class UpdateRateConfig : public tsl::Gui {
+private:
+    std::string modeName;
+    int currentRate;
+    
+public:
+    UpdateRateConfig(const std::string& mode) : modeName(mode) {
+        std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "refresh_rate");
+        if (value.empty()) {
+            // Check old update_rate for backward compatibility
+            value = ult::parseValueFromIniSection(configIniPath, "nano", "update_rate");
+        }
+        currentRate = value.empty() ? 60 : std::clamp(atoi(value.c_str()), 1, 60);
+    }
+
+    ~UpdateRateConfig() {
+        lastSelectedListItem = nullptr;
+    }
+    
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader("Refresh Rate"));
+
+        static const std::vector<int> rates = {1, 2, 3, 5, 10, 15, 30, 60};
+        for (int rate : rates) {
+            auto* rateItem = new tsl::elm::ListItem(std::to_string(rate) + " Hz");
+            if (rate == currentRate) {
+                rateItem->setValue(ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = rateItem;
+            }
+            rateItem->setClickListener([this, rateItem, rate](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, "nano", "refresh_rate", std::to_string(rate));
+                    rateItem->setValue(ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && rateItem != lastSelectedListItem)
+                        lastSelectedListItem->setValue("");
+                    lastSelectedListItem = rateItem;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(rateItem);
+        }
+        
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+    
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
+            tsl::goBack();
+            return true;
+        }
+        return false;
+    }
+};
+
 // Refresh Rate Configuration
 class RefreshRateConfig : public tsl::Gui {
 private:
@@ -851,6 +919,7 @@ private:
     bool isMiniMode;
     bool isMicroMode;
     bool isFPSCounterMode;
+    bool isNanoMode;
     std::string title;
     
 public:
@@ -859,6 +928,7 @@ public:
             isMiniMode = (mode == "Mini");
             isMicroMode = (mode == "Micro");
             isFPSCounterMode = (mode == "FPS Counter");
+            isNanoMode = (mode == "Nano");
             title = fontType;
             title[0] = std::toupper(title[0]);
             title += " Font Size";
@@ -875,6 +945,7 @@ public:
         if (isMiniMode) section = "mini";
         else if (isMicroMode) section = "micro";
         else if (isFPSCounterMode) section = "fps-counter";
+        else if (isNanoMode) section = "nano";
         
         const std::string keyName = fontType + "_font_size";
         const std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, keyName);
@@ -886,6 +957,7 @@ public:
         int maxSize;
         if (isFPSCounterMode) maxSize = 150;
         else if (isMiniMode) maxSize = 22;
+        else if (isNanoMode) maxSize = 20;
         else maxSize = 18; // Micro mode
         
         for (int size = minSize; size <= maxSize; size++) {
@@ -937,12 +1009,14 @@ private:
     bool isMiniMode;
     bool isMicroMode;
     bool isFPSCounterMode;
+    bool isNanoMode;
     
 public:
     FontSizeConfig(const std::string& mode) : modeName(mode) {
         isMiniMode = (mode == "Mini");
         isMicroMode = (mode == "Micro");
         isFPSCounterMode = (mode == "FPS Counter");
+        isNanoMode = (mode == "Nano");
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -953,6 +1027,7 @@ public:
         if (isMiniMode) section = "mini";
         else if (isMicroMode) section = "micro";
         else if (isFPSCounterMode) section = "fps-counter";
+        else if (isNanoMode) section = "nano";
         
         const std::string handheldValue = ult::parseValueFromIniSection(configIniPath, section, "handheld_font_size");
         const std::string dockedValue = ult::parseValueFromIniSection(configIniPath, section, "docked_font_size");
@@ -1018,6 +1093,7 @@ private:
     bool isGameResolutionsMode;
     bool isFPSCounterMode;
     bool isFPSGraphMode;
+    bool isNanoMode;
     bool isBackgroundColor;
     bool isTextBasedColor;
     
@@ -1030,6 +1106,7 @@ public:
             isGameResolutionsMode = (mode == "Game Resolutions");
             isFPSCounterMode = (mode == "FPS Counter");
             isFPSGraphMode = (mode == "FPS Graph");
+            isNanoMode = (mode == "Nano");
             
             // Determine if this is a background color or text-based color
             isBackgroundColor = (key == "background_color" || key == "focus_background_color" || 
@@ -1056,6 +1133,7 @@ public:
         else if (isGameResolutionsMode) section = "game_resolutions";
         else if (isFPSCounterMode) section = "fps-counter";
         else if (isFPSGraphMode) section = "fps-graph";
+        else if (isNanoMode) section = "nano";
         
         std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, colorKey);
         if (currentValue.empty()) currentValue = defaultValue;
@@ -1216,6 +1294,91 @@ public:
 };
 
 // Color Configuration
+// Gradient Color Selector (for RGB888 format colors)
+class GradientColorSelector : public tsl::Gui {
+private:
+    std::string modeName;
+    std::string modeTitle;
+    std::string colorKey;
+    std::string defaultValue;
+    
+public:
+    GradientColorSelector(const std::string& mode, const std::string& title, const std::string& key, const std::string& def) 
+        : modeName(mode), modeTitle(title), colorKey(key), defaultValue(def) {
+    }
+
+    ~GradientColorSelector() {
+        lastSelectedListItem = nullptr;
+    }
+    
+    virtual tsl::elm::Element* createUI() override {
+        auto* list = new tsl::elm::List();
+        list->addItem(new tsl::elm::CategoryHeader(modeTitle));
+    
+        std::string section = "nano";
+        
+        std::string currentValue = ult::parseValueFromIniSection(configIniPath, section, colorKey);
+        if (currentValue.empty()) currentValue = defaultValue;
+        
+        // RGB888 colors for gradient (common colors)
+        static const std::vector<std::pair<std::string, std::string>> gradientColors = {
+            {"Blue", "#008bdb"},
+            {"Cyan", "#00d9c4"},
+            {"Green", "#00ff00"},
+            {"Yellow", "#ffff00"},
+            {"Orange", "#ff8800"},
+            {"Red", "#ff0000"},
+            {"Magenta", "#ff00ff"},
+            {"Purple", "#8800ff"},
+            {"White", "#ffffff"},
+            {"Light Blue", "#00aaff"},
+            {"Light Green", "#88ff88"},
+            {"Pink", "#ff88ff"},
+            {"Light Cyan", "#88ffff"},
+        };
+        
+        for (const auto& color : gradientColors) {
+            auto* colorItem = new tsl::elm::ListItem(color.first);
+            colorItem->setValue(color.second);
+            
+            bool isSelected = (color.second == currentValue);
+            if (isSelected) {
+                colorItem->setValue(color.second + " " + ult::CHECKMARK_SYMBOL);
+                lastSelectedListItem = colorItem;
+            }
+            
+            colorItem->setClickListener([this, colorItem, color, section](uint64_t keys) {
+                if (keys & KEY_A) {
+                    ult::setIniFileValue(configIniPath, section, colorKey, color.second);
+                    colorItem->setValue(color.second + " " + ult::CHECKMARK_SYMBOL);
+                    if (lastSelectedListItem && colorItem != lastSelectedListItem)
+                        lastSelectedListItem->setValue(color.second);
+                    lastSelectedListItem = colorItem;
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(colorItem);
+        }
+        
+        list->jumpToItem("", ult::CHECKMARK_SYMBOL, false);
+
+        tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
+        rootFrame->setContent(list);
+        return rootFrame;
+    }
+    
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
+        if (keysDown & KEY_B) {
+            triggerRumbleDoubleClick.store(true, std::memory_order_release);
+            triggerExitSound.store(true, std::memory_order_release);
+            tsl::goBack();
+            return true;
+        }
+        return false;
+    }
+};
+
 class ColorConfig : public tsl::Gui {
 private:
     std::string modeName;
@@ -1225,6 +1388,7 @@ private:
     bool isGameResolutionsMode;
     bool isFPSCounterMode;
     bool isFPSGraphMode;
+    bool isNanoMode;
     
 public:
     ColorConfig(const std::string& mode) : modeName(mode) {
@@ -1234,6 +1398,7 @@ public:
         isGameResolutionsMode = (mode == "Game Resolutions");
         isFPSCounterMode = (mode == "FPS Counter");
         isFPSGraphMode = (mode == "FPS Graph");
+        isNanoMode = (mode == "Nano");
         
         // Full mode should never access color configuration
         //if (isFullMode) {
@@ -1254,6 +1419,7 @@ public:
             else if (isGameResolutionsMode) section = "game_resolutions";
             else if (isFPSCounterMode) section = "fps-counter";
             else if (isFPSGraphMode) section = "fps-graph";
+            else if (isNanoMode) section = "nano";
             
             std::string value = ult::parseValueFromIniSection(configIniPath, section, key);
             return value.empty() ? def : value;
@@ -1353,8 +1519,8 @@ public:
             return "60%";
         };
         
-        if (!isFullMode) {
-            // Background Color (all modes)
+        if (!isFullMode && !isNanoMode) {
+            // Background Color (all modes except Nano)
             auto* bgColor = new tsl::elm::ListItem("Background Color");
             std::string bgDefault = "#0009";
             std::string bgCurrentColor = getCurrentColor("background_color", bgDefault);
@@ -1422,6 +1588,70 @@ public:
             return false;
         });
         list->addItem(textColor);
+        
+        // Gradient settings (Nano only)
+        if (isNanoMode) {
+            auto getGradientEnabled = [this]() -> bool {
+                std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "use_gradient");
+                convertToUpper(value);
+                return value == "TRUE";
+            };
+            
+            auto* useGradient = new tsl::elm::ListItem("Use Gradient");
+            bool gradientEnabled = getGradientEnabled();
+            useGradient->setValue(gradientEnabled ? "ON" : "OFF");
+            useGradient->setClickListener([this, useGradient](uint64_t keys) {
+                if (keys & KEY_A) {
+                    std::string currentValueStr = ult::parseValueFromIniSection(configIniPath, "nano", "use_gradient");
+                    std::string upperValue = currentValueStr;
+                    convertToUpper(upperValue);
+                    bool currentValue = (upperValue == "TRUE");
+                    ult::setIniFileValue(configIniPath, "nano", "use_gradient", currentValue ? "false" : "true");
+                    useGradient->setValue(currentValue ? "OFF" : "ON");
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(useGradient);
+            
+            if (gradientEnabled) {
+                // Gradient Start Color (RGB888 format: #RRGGBB)
+                auto getGradientStartColor = [this]() -> std::string {
+                    std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "gradient_start_color");
+                    return value.empty() ? "#008bdb" : value;
+                };
+                
+                auto* gradientStartColor = new tsl::elm::ListItem("Gradient Start Color");
+                std::string gradientStartCurrentColor = getGradientStartColor();
+                gradientStartColor->setValue(gradientStartCurrentColor);
+                gradientStartColor->setClickListener([this](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        tsl::changeTo<GradientColorSelector>(modeName, "Gradient Start Color", "gradient_start_color", "#008bdb");
+                        return true;
+                    }
+                    return false;
+                });
+                list->addItem(gradientStartColor);
+                
+                // Gradient End Color (RGB888 format: #RRGGBB)
+                auto getGradientEndColor = [this]() -> std::string {
+                    std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "gradient_end_color");
+                    return value.empty() ? "#00d9c4" : value;
+                };
+                
+                auto* gradientEndColor = new tsl::elm::ListItem("Gradient End Color");
+                std::string gradientEndCurrentColor = getGradientEndColor();
+                gradientEndColor->setValue(gradientEndCurrentColor);
+                gradientEndColor->setClickListener([this](uint64_t keys) {
+                    if (keys & KEY_A) {
+                        tsl::changeTo<GradientColorSelector>(modeName, "Gradient End Color", "gradient_end_color", "#00d9c4");
+                        return true;
+                    }
+                    return false;
+                });
+                list->addItem(gradientEndColor);
+            }
+        }
         
         if (isFPSGraphMode) {
             // FPS Graph specific colors
@@ -1833,6 +2063,7 @@ private:
     bool isGameResolutionsMode;
     bool isFPSCounterMode;
     bool isFPSGraphMode;
+    bool isNanoMode;
     
 public:
     ConfiguratorOverlay(const std::string& mode) : modeName(mode) {
@@ -1842,6 +2073,7 @@ public:
         isGameResolutionsMode = (mode == "Game Resolutions");
         isFPSCounterMode = (mode == "FPS Counter");
         isFPSGraphMode = (mode == "FPS Graph");
+        isNanoMode = (mode == "Nano");
     }
     
     virtual tsl::elm::Element* createUI() override {
@@ -1891,8 +2123,8 @@ public:
         //}
         
         
-        // 4. Font Sizes (Mini/Micro/FPS Counter only)
-        if (isMiniMode || isMicroMode || isFPSCounterMode) {
+        // 4. Font Sizes (Mini/Micro/FPS Counter/Nano only)
+        if (isMiniMode || isMicroMode || isFPSCounterMode || isNanoMode) {
             auto* fontSizes = new tsl::elm::ListItem("Font Sizes");
             fontSizes->setValue(ult::DROPDOWN_SYMBOL);
             fontSizes->setClickListener([this](uint64_t keys) {
@@ -1905,17 +2137,42 @@ public:
             list->addItem(fontSizes);
         }
         
-        // 1. Refresh Rate (all modes)
-        auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
-        refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
-        refreshRate->setClickListener([this](uint64_t keys) {
-            if (keys & KEY_A) {
-                tsl::changeTo<RefreshRateConfig>(modeName);
-                return true;
-            }
-            return false;
-        });
-        list->addItem(refreshRate);
+        // 1. Refresh Rate (all modes except Nano)
+        if (!isNanoMode) {
+            auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
+            refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+            refreshRate->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<RefreshRateConfig>(modeName);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(refreshRate);
+        }
+        
+        // Refresh Rate (Nano only) - Refresh rate for indicators (not graph)
+        if (isNanoMode) {
+            auto getCurrentRefreshRate = [this]() -> int {
+                std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "refresh_rate");
+                if (value.empty()) {
+                    // Check old update_rate for backward compatibility
+                    value = ult::parseValueFromIniSection(configIniPath, "nano", "update_rate");
+                }
+                return value.empty() ? 60 : std::clamp(atoi(value.c_str()), 1, 60);
+            };
+            
+            auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
+            refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+            refreshRate->setClickListener([this](uint64_t keys) {
+                if (keys & KEY_A) {
+                    tsl::changeTo<UpdateRateConfig>(modeName);
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(refreshRate);
+        }
         
         // 6. DTC Format (Mini/Micro only) - NEW ADDITION
         if (isMiniMode || isMicroMode) {
