@@ -1390,6 +1390,23 @@ private:
     bool isFPSGraphMode;
     bool isNanoMode;
     
+    // Store pointers to list items that need updating
+    tsl::elm::ListItem* bgColorItem = nullptr;
+    tsl::elm::ListItem* bgAlphaItem = nullptr;
+    tsl::elm::ListItem* focusBgColorItem = nullptr;
+    tsl::elm::ListItem* focusAlphaItem = nullptr;
+    tsl::elm::ListItem* textColorItem = nullptr;
+    tsl::elm::ListItem* useGradientItem = nullptr;
+    tsl::elm::ListItem* gradientStartColorItem = nullptr;
+    tsl::elm::ListItem* gradientEndColorItem = nullptr;
+    std::vector<tsl::elm::ListItem*> fpsGraphColorItems;
+    std::vector<tsl::elm::ListItem*> fpsGraphAlphaItems;
+    tsl::elm::ListItem* catColorItem = nullptr;
+    tsl::elm::ListItem* catColor1Item = nullptr;
+    tsl::elm::ListItem* catColor2Item = nullptr;
+    tsl::elm::ListItem* sepColorItem = nullptr;
+    tsl::elm::List* listPtr = nullptr;
+    
 public:
     ColorConfig(const std::string& mode) : modeName(mode) {
         isMiniMode = (mode == "Mini");
@@ -1408,7 +1425,8 @@ public:
     }
     
     virtual tsl::elm::Element* createUI() override {
-        auto* list = new tsl::elm::List();
+        listPtr = new tsl::elm::List();
+        auto* list = listPtr;
         list->addItem(new tsl::elm::CategoryHeader("Colors"));
         
         auto getCurrentColor = [this](const std::string& key, const std::string& def) {
@@ -1521,73 +1539,73 @@ public:
         
         if (!isFullMode && !isNanoMode) {
             // Background Color (all modes except Nano)
-            auto* bgColor = new tsl::elm::ListItem("Background Color");
+            bgColorItem = new tsl::elm::ListItem("Background Color");
             std::string bgDefault = "#0009";
             std::string bgCurrentColor = getCurrentColor("background_color", bgDefault);
             // Display color name instead of hex
-            bgColor->setValue(getColorName(bgCurrentColor));
-            bgColor->setClickListener([this, bgDefault](uint64_t keys) {
+            bgColorItem->setValue(getColorName(bgCurrentColor));
+            bgColorItem->setClickListener([this, bgDefault](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Background Color", "background_color", bgDefault);
                     return true;
                 }
                 return false;
             });
-            list->addItem(bgColor);
+            list->addItem(bgColorItem);
             
             // Background Alpha (new)
-            auto* bgAlpha = new tsl::elm::ListItem("Background Alpha");
-            bgAlpha->setValue(getAlphaPercentage(bgCurrentColor));
-            bgAlpha->setClickListener([this](uint64_t keys) {
+            bgAlphaItem = new tsl::elm::ListItem("Background Alpha");
+            bgAlphaItem->setValue(getAlphaPercentage(bgCurrentColor));
+            bgAlphaItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<AlphaSelector>(modeName, "background_color", "Background Alpha");
                     return true;
                 }
                 return false;
             });
-            list->addItem(bgAlpha);
+            list->addItem(bgAlphaItem);
         
             if (isMiniMode || isFPSCounterMode || isFPSGraphMode || isGameResolutionsMode) {
                 // Mini mode: has focus background
-                auto* focusBgColor = new tsl::elm::ListItem("Focus Color");
+                focusBgColorItem = new tsl::elm::ListItem("Focus Color");
                 std::string focusCurrentColor = getCurrentColor("focus_background_color", "#000F");
-                focusBgColor->setValue(getColorName(focusCurrentColor));
-                focusBgColor->setClickListener([this](uint64_t keys) {
+                focusBgColorItem->setValue(getColorName(focusCurrentColor));
+                focusBgColorItem->setClickListener([this](uint64_t keys) {
                     if (keys & KEY_A) {
                         tsl::changeTo<ColorSelector>(modeName, "Focus Color", "focus_background_color", "#000F");
                         return true;
                     }
                     return false;
                 });
-                list->addItem(focusBgColor);
+                list->addItem(focusBgColorItem);
                 
                 // Focus Alpha (new)
-                auto* focusAlpha = new tsl::elm::ListItem("Focus Alpha");
-                focusAlpha->setValue(getAlphaPercentage(focusCurrentColor));
-                focusAlpha->setClickListener([this](uint64_t keys) {
+                focusAlphaItem = new tsl::elm::ListItem("Focus Alpha");
+                focusAlphaItem->setValue(getAlphaPercentage(focusCurrentColor));
+                focusAlphaItem->setClickListener([this](uint64_t keys) {
                     if (keys & KEY_A) {
                         tsl::changeTo<AlphaSelector>(modeName, "focus_background_color", "Focus Alpha");
                         return true;
                     }
                     return false;
                 });
-                list->addItem(focusAlpha);
+                list->addItem(focusAlphaItem);
             }
         }
 
         // Text Color (all modes)
-        auto* textColor = new tsl::elm::ListItem("Text Color");
+        textColorItem = new tsl::elm::ListItem("Text Color");
         std::string textCurrentColor = getCurrentColor("text_color", "#FFFF");
         // Display color name for text colors
-        textColor->setValue(getColorName(textCurrentColor));
-        textColor->setClickListener([this](uint64_t keys) {
+        textColorItem->setValue(getColorName(textCurrentColor));
+        textColorItem->setClickListener([this](uint64_t keys) {
             if (keys & KEY_A) {
                 tsl::changeTo<ColorSelector>(modeName, "Text Color", "text_color", "#FFFF");
                 return true;
             }
             return false;
         });
-        list->addItem(textColor);
+        list->addItem(textColorItem);
         
         // Gradient settings (Nano only)
         if (isNanoMode) {
@@ -1597,22 +1615,28 @@ public:
                 return value == "TRUE";
             };
             
-            auto* useGradient = new tsl::elm::ListItem("Use Gradient");
+            useGradientItem = new tsl::elm::ListItem("Use Gradient");
             bool gradientEnabled = getGradientEnabled();
-            useGradient->setValue(gradientEnabled ? "ON" : "OFF");
-            useGradient->setClickListener([this, useGradient](uint64_t keys) {
+            useGradientItem->setValue(gradientEnabled ? "ON" : "OFF");
+            useGradientItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     std::string currentValueStr = ult::parseValueFromIniSection(configIniPath, "nano", "use_gradient");
                     std::string upperValue = currentValueStr;
                     convertToUpper(upperValue);
                     bool currentValue = (upperValue == "TRUE");
                     ult::setIniFileValue(configIniPath, "nano", "use_gradient", currentValue ? "false" : "true");
-                    useGradient->setValue(currentValue ? "OFF" : "ON");
+                    useGradientItem->setValue(currentValue ? "OFF" : "ON");
+                    
+                    // Save current position and recreate UI to show/hide gradient color options
+                    jumpItemName = "Use Gradient";
+                    jumpItemValue = currentValue ? "OFF" : "ON";
+                    jumpItemExactMatch = false;
+                    tsl::swapTo<ColorConfig>(SwapDepth(1), modeName);
                     return true;
                 }
                 return false;
             });
-            list->addItem(useGradient);
+            list->addItem(useGradientItem);
             
             if (gradientEnabled) {
                 // Gradient Start Color (RGB888 format: #RRGGBB)
@@ -1621,17 +1645,17 @@ public:
                     return value.empty() ? "#008bdb" : value;
                 };
                 
-                auto* gradientStartColor = new tsl::elm::ListItem("Gradient Start Color");
+                gradientStartColorItem = new tsl::elm::ListItem("Gradient Start Color");
                 std::string gradientStartCurrentColor = getGradientStartColor();
-                gradientStartColor->setValue(gradientStartCurrentColor);
-                gradientStartColor->setClickListener([this](uint64_t keys) {
+                gradientStartColorItem->setValue(gradientStartCurrentColor);
+                gradientStartColorItem->setClickListener([this](uint64_t keys) {
                     if (keys & KEY_A) {
                         tsl::changeTo<GradientColorSelector>(modeName, "Gradient Start Color", "gradient_start_color", "#008bdb");
                         return true;
                     }
                     return false;
                 });
-                list->addItem(gradientStartColor);
+                list->addItem(gradientStartColorItem);
                 
                 // Gradient End Color (RGB888 format: #RRGGBB)
                 auto getGradientEndColor = [this]() -> std::string {
@@ -1639,17 +1663,17 @@ public:
                     return value.empty() ? "#00d9c4" : value;
                 };
                 
-                auto* gradientEndColor = new tsl::elm::ListItem("Gradient End Color");
+                gradientEndColorItem = new tsl::elm::ListItem("Gradient End Color");
                 std::string gradientEndCurrentColor = getGradientEndColor();
-                gradientEndColor->setValue(gradientEndCurrentColor);
-                gradientEndColor->setClickListener([this](uint64_t keys) {
+                gradientEndColorItem->setValue(gradientEndCurrentColor);
+                gradientEndColorItem->setClickListener([this](uint64_t keys) {
                     if (keys & KEY_A) {
                         tsl::changeTo<GradientColorSelector>(modeName, "Gradient End Color", "gradient_end_color", "#00d9c4");
                         return true;
                     }
                     return false;
                 });
-                list->addItem(gradientEndColor);
+                list->addItem(gradientEndColorItem);
             }
         }
         
@@ -1663,16 +1687,16 @@ public:
             };
             
             // Game Resolutions: only category color (no separator)
-            auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getColorName(getCurrentColor("cat_color", "#0F0F")));
-            catColor->setClickListener([this](uint64_t keys) {
+            catColorItem = new tsl::elm::ListItem("Category Color");
+            catColorItem->setValue(getColorName(getCurrentColor("cat_color", "#0F0F")));
+            catColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#0F0F");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor);
+            list->addItem(catColorItem);
 
             static const std::vector<ColorSetting> fpsGraphColors = {
                 {"FPS Counter", "fps_counter_color", "#888C", true},      // background type
@@ -1705,6 +1729,7 @@ public:
                     return false;
                 });
                 list->addItem(colorItem);
+                fpsGraphColorItems.push_back(colorItem);
                 
                 // Add alpha selector for background-type colors
                 if (color.isBackgroundType) {
@@ -1718,107 +1743,108 @@ public:
                         return false;
                     });
                     list->addItem(alphaItem);
+                    fpsGraphAlphaItems.push_back(alphaItem);
                 }
             }
 
         } else if (isFullMode) {
-            auto* catColor1 = new tsl::elm::ListItem("Category Color 1");
+            catColor1Item = new tsl::elm::ListItem("Category Color 1");
             // Display color name for category colors
-            catColor1->setValue(getColorName(getCurrentColor("cat_color_1", "#8FFF")));
-            catColor1->setClickListener([this](uint64_t keys) {
+            catColor1Item->setValue(getColorName(getCurrentColor("cat_color_1", "#8FFF")));
+            catColor1Item->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color 1", "cat_color_1", "#8FFF");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor1);
+            list->addItem(catColor1Item);
 
-            auto* catColor2 = new tsl::elm::ListItem("Category Color 2");
+            catColor2Item = new tsl::elm::ListItem("Category Color 2");
             // Display color name for category colors
-            catColor2->setValue(getColorName(getCurrentColor("cat_color_2", "#2DFF")));
-            catColor2->setClickListener([this](uint64_t keys) {
+            catColor2Item->setValue(getColorName(getCurrentColor("cat_color_2", "#2DFF")));
+            catColor2Item->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color 2", "cat_color_2", "#2DFF");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor2);
+            list->addItem(catColor2Item);
     
-            auto* sepColor = new tsl::elm::ListItem("Separator Color");
+            sepColorItem = new tsl::elm::ListItem("Separator Color");
             // Display color name for separator colors
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
-            sepColor->setClickListener([this](uint64_t keys) {
+            sepColorItem->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
+            sepColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;
             });
-            list->addItem(sepColor);
+            list->addItem(sepColorItem);
         } else if (isMiniMode) {
-            auto* catColor = new tsl::elm::ListItem("Category Color");
+            catColorItem = new tsl::elm::ListItem("Category Color");
             // Display color name for category colors
-            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
-            catColor->setClickListener([this](uint64_t keys) {
+            catColorItem->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
+            catColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor);
+            list->addItem(catColorItem);
     
-            auto* sepColor = new tsl::elm::ListItem("Separator Color");
+            sepColorItem = new tsl::elm::ListItem("Separator Color");
             // Display color name for separator colors
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
-            sepColor->setClickListener([this](uint64_t keys) {
+            sepColorItem->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
+            sepColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;
             });
-            list->addItem(sepColor);
+            list->addItem(sepColorItem);
             
         } else if (isMicroMode) {
-            auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
-            catColor->setClickListener([this](uint64_t keys) {
+            catColorItem = new tsl::elm::ListItem("Category Color");
+            catColorItem->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
+            catColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor);
+            list->addItem(catColorItem);
             
             // Micro mode: separator and category colors (no focus background like Mini)
-            auto* sepColor = new tsl::elm::ListItem("Separator Color");
-            sepColor->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
-            sepColor->setClickListener([this](uint64_t keys) {
+            sepColorItem = new tsl::elm::ListItem("Separator Color");
+            sepColorItem->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
+            sepColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Separator Color", "separator_color", "#888F");
                     return true;
                 }
                 return false;
             });
-            list->addItem(sepColor);
+            list->addItem(sepColorItem);
             
             
         } else if (isGameResolutionsMode) {
             // Game Resolutions: only category color (no separator)
-            auto* catColor = new tsl::elm::ListItem("Category Color");
-            catColor->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
-            catColor->setClickListener([this](uint64_t keys) {
+            catColorItem = new tsl::elm::ListItem("Category Color");
+            catColorItem->setValue(getColorName(getCurrentColor("cat_color", "#2DFF")));
+            catColorItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<ColorSelector>(modeName, "Category Color", "cat_color", "#2DFF");
                     return true;
                 }
                 return false;
             });
-            list->addItem(catColor);
+            list->addItem(catColorItem);
         }
         // FPS Counter mode: only background and text colors (already added above)
         // Full mode: NO color settings at all (excluded from this function)
@@ -1834,6 +1860,153 @@ public:
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", "Configuration");
         rootFrame->setContent(list);
         return rootFrame;
+    }
+    
+    virtual void update() override {
+        // Update values when returning from submenus
+        auto getCurrentColor = [this](const std::string& key, const std::string& def) {
+            std::string section;
+            if (isMiniMode) section = "mini";
+            else if (isMicroMode) section = "micro";
+            else if (isFullMode) section = "full";
+            else if (isGameResolutionsMode) section = "game_resolutions";
+            else if (isFPSCounterMode) section = "fps-counter";
+            else if (isFPSGraphMode) section = "fps-graph";
+            else if (isNanoMode) section = "nano";
+            
+            std::string value = ult::parseValueFromIniSection(configIniPath, section, key);
+            return value.empty() ? def : value;
+        };
+        
+        auto getColorName = [](const std::string& hexColor) -> std::string {
+            // Extract RGB without alpha for comparison
+            std::string rgb = hexColor;
+            if (hexColor.length() == 5 && hexColor[0] == '#') {
+                rgb = hexColor.substr(0, 4);
+            }
+            
+            // Map of hex colors to names (RGB only, no alpha)
+            static const std::map<std::string, std::string> colorNames = {
+                {"#000", "Black"}, {"#333", "Dark Gray"}, {"#444", "Gray"}, {"#888", "Light Gray"},
+                {"#CCC", "Silver"}, {"#FFF", "White"}, {"#800", "Dark Red"}, {"#F00", "Red"},
+                {"#F88", "Light Red"}, {"#F8A", "Pink"}, {"#080", "Dark Green"}, {"#0F0", "Green"},
+                {"#0C0", "Lime Green"}, {"#8F8", "Light Green"}, {"#003", "Dark Blue"}, {"#00F", "Blue"},
+                {"#2DF", "Light Blue"}, {"#8CF", "Sky Blue"}, {"#808", "Dark Purple"}, {"#80F", "Purple"},
+                {"#C8F", "Light Purple"}, {"#A0F", "Violet"}, {"#F80", "Orange"}, {"#FF0", "Yellow"},
+                {"#FFC", "Light Yellow"}, {"#088", "Teal"}, {"#0FF", "Cyan"}, {"#8FF", "Light Cyan"},
+                {"#F0F", "Magenta"}, {"#F8C", "Hot Pink"}, {"#840", "Brown"}, {"#A86", "Light Brown"}
+            };
+            
+            auto it = colorNames.find(rgb);
+            if (it != colorNames.end()) {
+                if (rgb == "#000" && hexColor.length() == 5) {
+                    char alpha = hexColor[4];
+                    if (alpha == '0') return "Transparent";
+                    else return "Black";
+                }
+                return it->second;
+            }
+            return rgb;
+        };
+        
+        auto getAlphaPercentage = [](const std::string& color) -> std::string {
+            if (color.length() == 5 && color[0] == '#') {
+                char alpha = color[4];
+                switch(alpha) {
+                    case '0': return "0%";
+                    case '1': return "10%";
+                    case '3': return "20%";
+                    case '4': return "30%";
+                    case '6': return "40%";
+                    case '8': return "50%";
+                    case '9': return "60%";
+                    case 'B': case 'b': return "70%";
+                    case 'C': case 'c': return "80%";
+                    case 'E': case 'e': return "90%";
+                    case 'F': case 'f': return "100%";
+                    default: return "60%";
+                }
+            }
+            return "60%";
+        };
+        
+        if (bgColorItem) {
+            bgColorItem->setValue(getColorName(getCurrentColor("background_color", "#0009")));
+        }
+        if (bgAlphaItem) {
+            bgAlphaItem->setValue(getAlphaPercentage(getCurrentColor("background_color", "#0009")));
+        }
+        if (focusBgColorItem) {
+            focusBgColorItem->setValue(getColorName(getCurrentColor("focus_background_color", "#000F")));
+        }
+        if (focusAlphaItem) {
+            focusAlphaItem->setValue(getAlphaPercentage(getCurrentColor("focus_background_color", "#000F")));
+        }
+        if (textColorItem) {
+            textColorItem->setValue(getColorName(getCurrentColor("text_color", "#FFFF")));
+        }
+        if (useGradientItem) {
+            std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "use_gradient");
+            convertToUpper(value);
+            useGradientItem->setValue(value == "TRUE" ? "ON" : "OFF");
+        }
+        if (gradientStartColorItem) {
+            std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "gradient_start_color");
+            gradientStartColorItem->setValue(value.empty() ? "#008bdb" : value);
+        }
+        if (gradientEndColorItem) {
+            std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "gradient_end_color");
+            gradientEndColorItem->setValue(value.empty() ? "#00d9c4" : value);
+        }
+        if (catColorItem) {
+            std::string defaultVal = isFPSGraphMode ? "#0F0F" : "#2DFF";
+            catColorItem->setValue(getColorName(getCurrentColor("cat_color", defaultVal)));
+        }
+        if (catColor1Item) {
+            catColor1Item->setValue(getColorName(getCurrentColor("cat_color_1", "#8FFF")));
+        }
+        if (catColor2Item) {
+            catColor2Item->setValue(getColorName(getCurrentColor("cat_color_2", "#2DFF")));
+        }
+        if (sepColorItem) {
+            sepColorItem->setValue(getColorName(getCurrentColor("separator_color", "#888F")));
+        }
+        
+        // Update FPS Graph colors
+        if (isFPSGraphMode && !fpsGraphColorItems.empty()) {
+            static const std::vector<std::tuple<std::string, std::string, std::string>> fpsGraphColorKeys = {
+                {"FPS Counter", "fps_counter_color", "#888C"},
+                {"Border", "border_color", "#2DFF"},
+                {"Dashed Line", "dashed_line_color", "#8888"},
+                {"Max FPS Text", "max_fps_text_color", "#FFFF"},
+                {"Min FPS Text", "min_fps_text_color", "#FFFF"},
+                {"Main Line", "main_line_color", "#FFFF"},
+                {"Rounded Line", "rounded_line_color", "#F0FF"},
+                {"Perfect Line", "perfect_line_color", "#0C0F"}
+            };
+            
+            size_t idx = 0;
+            for (const auto& color : fpsGraphColorKeys) {
+                if (idx < fpsGraphColorItems.size()) {
+                    fpsGraphColorItems[idx]->setValue(getColorName(getCurrentColor(std::get<1>(color), std::get<2>(color))));
+                }
+                idx++;
+            }
+            
+            // Update alpha items
+            static const std::vector<std::tuple<std::string, std::string, std::string>> fpsGraphAlphaKeys = {
+                {"FPS Counter", "fps_counter_color", "#888C"},
+                {"Dashed Line", "dashed_line_color", "#8888"}
+            };
+            
+            idx = 0;
+            for (const auto& color : fpsGraphAlphaKeys) {
+                if (idx < fpsGraphAlphaItems.size()) {
+                    fpsGraphAlphaItems[idx]->setValue(getAlphaPercentage(getCurrentColor(std::get<1>(color), std::get<2>(color))));
+                }
+                idx++;
+            }
+        }
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {
@@ -2065,6 +2238,13 @@ private:
     bool isFPSGraphMode;
     bool isNanoMode;
     
+    // Store pointers to list items that need updating
+    tsl::elm::ListItem* refreshRateItem = nullptr;
+    tsl::elm::ListItem* dtcFormatItem = nullptr;
+    tsl::elm::ListItem* framePaddingItem = nullptr;
+    tsl::elm::ListItem* textAlignItem = nullptr;
+    tsl::elm::ListItem* layerPosItem = nullptr;
+    
 public:
     ConfiguratorOverlay(const std::string& mode) : modeName(mode) {
         isMiniMode = (mode == "Mini");
@@ -2139,16 +2319,16 @@ public:
         
         // 1. Refresh Rate (all modes except Nano)
         if (!isNanoMode) {
-            auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
-            refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
-            refreshRate->setClickListener([this](uint64_t keys) {
+            refreshRateItem = new tsl::elm::ListItem("Refresh Rate");
+            refreshRateItem->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+            refreshRateItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<RefreshRateConfig>(modeName);
                     return true;
                 }
                 return false;
             });
-            list->addItem(refreshRate);
+            list->addItem(refreshRateItem);
         }
         
         // Refresh Rate (Nano only) - Refresh rate for indicators (not graph)
@@ -2162,87 +2342,87 @@ public:
                 return value.empty() ? 60 : std::clamp(atoi(value.c_str()), 1, 60);
             };
             
-            auto* refreshRate = new tsl::elm::ListItem("Refresh Rate");
-            refreshRate->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
-            refreshRate->setClickListener([this](uint64_t keys) {
+            refreshRateItem = new tsl::elm::ListItem("Refresh Rate");
+            refreshRateItem->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+            refreshRateItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<UpdateRateConfig>(modeName);
                     return true;
                 }
                 return false;
             });
-            list->addItem(refreshRate);
+            list->addItem(refreshRateItem);
         }
         
         // 6. DTC Format (Mini/Micro only) - NEW ADDITION
         if (isMiniMode || isMicroMode) {
-            auto* dtcFormat = new tsl::elm::ListItem("DTC Format");
-            dtcFormat->setValue(getCurrentDTCFormat());
-            dtcFormat->setClickListener([this](uint64_t keys) {
+            dtcFormatItem = new tsl::elm::ListItem("DTC Format");
+            dtcFormatItem->setValue(getCurrentDTCFormat());
+            dtcFormatItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<DTCFormatConfig>(modeName);
                     return true;
                 }
                 return false;
             });
-            list->addItem(dtcFormat);
+            list->addItem(dtcFormatItem);
         }
 
         // 7. Frame Padding (Mini only) - NEW ADDITION
         if (isMiniMode || isGameResolutionsMode || isFPSCounterMode || isFPSGraphMode) {
-            auto* framePadding = new tsl::elm::ListItem("Frame Padding");
-            framePadding->setValue(std::to_string(getCurrentFramePadding()) + " px");
-            framePadding->setClickListener([this](uint64_t keys) {
+            framePaddingItem = new tsl::elm::ListItem("Frame Padding");
+            framePaddingItem->setValue(std::to_string(getCurrentFramePadding()) + " px");
+            framePaddingItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     tsl::changeTo<FramePaddingConfig>(modeName);
                     return true;
                 }
                 return false;
             });
-            list->addItem(framePadding);
+            list->addItem(framePaddingItem);
         }
         
         // 7. Mode-specific positioning settings
         if (isMicroMode) {
             // Text Alignment for Micro
-            auto* textAlign = new tsl::elm::ListItem("Text Alignment");
-            textAlign->setValue(getCurrentTextAlign());
-            textAlign->setClickListener([this, textAlign](uint64_t keys) {
+            textAlignItem = new tsl::elm::ListItem("Text Alignment");
+            textAlignItem->setValue(getCurrentTextAlign());
+            textAlignItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     const std::string next = cycleTextAlign();
-                    textAlign->setValue(next);
+                    textAlignItem->setValue(next);
                     return true;
                 }
                 return false;
             });
-            list->addItem(textAlign);
+            list->addItem(textAlignItem);
 
             // Vertical Position for Micro (Top/Bottom only)
-            auto* layerPos = new tsl::elm::ListItem("Vertical Position");
-            layerPos->setValue(getCurrentLayerPosBottom());
-            layerPos->setClickListener([this, layerPos](uint64_t keys) {
+            layerPosItem = new tsl::elm::ListItem("Vertical Position");
+            layerPosItem->setValue(getCurrentLayerPosBottom());
+            layerPosItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     const std::string next = cycleLayerPosBottom();
-                    layerPos->setValue(next);
+                    layerPosItem->setValue(next);
                     return true;
                 }
                 return false;
             });
-            list->addItem(layerPos);
+            list->addItem(layerPosItem);
             
         } else if (isFullMode) {
             // Horizontal Position for Full (Left/Right only)
-            auto* layerPos = new tsl::elm::ListItem("Horizontal Position");
-            layerPos->setValue(getCurrentLayerPosRight());
-            layerPos->setClickListener([this, layerPos](uint64_t keys) {
+            layerPosItem = new tsl::elm::ListItem("Horizontal Position");
+            layerPosItem->setValue(getCurrentLayerPosRight());
+            layerPosItem->setClickListener([this](uint64_t keys) {
                 if (keys & KEY_A) {
                     const std::string next = cycleLayerPosRight();
-                    layerPos->setValue(next);
+                    layerPosItem->setValue(next);
                     return true;
                 }
                 return false;
             });
-            list->addItem(layerPos);
+            list->addItem(layerPosItem);
             
         //} else if (isGameResolutionsMode || isFPSCounterMode || isFPSGraphMode) {
         //    // Both horizontal and vertical positioning
@@ -2281,6 +2461,42 @@ public:
         tsl::elm::OverlayFrame* rootFrame = new tsl::elm::OverlayFrame("Status Monitor", modeName);
         rootFrame->setContent(list);
         return rootFrame;
+    }
+    
+    virtual void update() override {
+        // Update values when returning from submenus
+        if (refreshRateItem) {
+            if (isNanoMode) {
+                std::string value = ult::parseValueFromIniSection(configIniPath, "nano", "refresh_rate");
+                if (value.empty()) {
+                    value = ult::parseValueFromIniSection(configIniPath, "nano", "update_rate");
+                }
+                int rate = value.empty() ? 60 : std::clamp(atoi(value.c_str()), 1, 60);
+                refreshRateItem->setValue(std::to_string(rate) + " Hz");
+            } else {
+                refreshRateItem->setValue(std::to_string(getCurrentRefreshRate()) + " Hz");
+            }
+        }
+        
+        if (dtcFormatItem) {
+            dtcFormatItem->setValue(getCurrentDTCFormat());
+        }
+        
+        if (framePaddingItem) {
+            framePaddingItem->setValue(std::to_string(getCurrentFramePadding()) + " px");
+        }
+        
+        if (textAlignItem) {
+            textAlignItem->setValue(getCurrentTextAlign());
+        }
+        
+        if (layerPosItem) {
+            if (isMicroMode) {
+                layerPosItem->setValue(getCurrentLayerPosBottom());
+            } else if (isFullMode) {
+                layerPosItem->setValue(getCurrentLayerPosRight());
+            }
+        }
     }
     
     virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos, HidAnalogStickState joyStickPosLeft, HidAnalogStickState joyStickPosRight) override {

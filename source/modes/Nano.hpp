@@ -86,6 +86,16 @@ private:
     uint64_t last_lcd_hz_update;
     uint64_t last_indicator_update = 0;
     tsl::elm::HeaderOverlayFrame* rootFrame = nullptr;
+    tsl::elm::CustomDrawer* statusDrawer = nullptr;
+    tsl::elm::CustomDrawer* fpsGraphDrawer = nullptr;
+    
+    // Store last settings values to detect changes
+    size_t lastHandheldFontSize = 0;
+    size_t lastDockedFontSize = 0;
+    uint16_t lastTextColor = 0;
+    bool lastUseGradient = false;
+    uint32_t lastGradientStartColor = 0;
+    uint32_t lastGradientEndColor = 0;
 		
 	void drawGradientText(tsl::gfx::Renderer *renderer, const char* text, u32 x, u32 y, u16 w, u16 h) {
 		size_t textLength = strlen(text);
@@ -208,6 +218,14 @@ public:
 			fontsize = settings.handheldFontSize;
 		}
 		else fontsize = settings.dockedFontSize;
+		
+		// Store initial settings for comparison
+		lastHandheldFontSize = settings.handheldFontSize;
+		lastDockedFontSize = settings.dockedFontSize;
+		lastTextColor = settings.textColor;
+		lastUseGradient = settings.useGradient;
+		lastGradientStartColor = settings.gradientStartColor;
+		lastGradientEndColor = settings.gradientEndColor;
 		switch(settings.setPos) {
 			case 1:
 			case 4:
@@ -305,11 +323,11 @@ public:
     }
     virtual tsl::elm::Element* createUI() override {
         rootFrame = new tsl::elm::HeaderOverlayFrame("", "");
-        auto Status = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+        statusDrawer = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
             drawGradientText(renderer, Variables, 4, 14, w, h);
             drawGradientTextB(renderer, VariablesB, 4, 30, w, h);
         });
-	auto FpsGraph = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
+	fpsGraphDrawer = new tsl::elm::CustomDrawer([this](tsl::gfx::Renderer *renderer, u16 x, u16 y, u16 w, u16 h) {
 		switch(settings.setPos) {
 			case 1:
 				base_x = 224 - ((rectangle_width + 21) / 2);
@@ -356,7 +374,7 @@ public:
 		}
 	});
 
-        auto overlayElement = new NanoOverlayElement(Status, FpsGraph);
+        auto overlayElement = new NanoOverlayElement(statusDrawer, fpsGraphDrawer);
         rootFrame->setContent(overlayElement);
         return rootFrame;
     }
@@ -365,12 +383,47 @@ public:
 		// Reload settings if they changed
 		GetConfigSettings(&settings);
 		
+		// Check if settings changed and need UI update
+		bool settingsChanged = false;
+		if (lastHandheldFontSize != settings.handheldFontSize ||
+		    lastDockedFontSize != settings.dockedFontSize ||
+		    lastTextColor != settings.textColor ||
+		    lastUseGradient != settings.useGradient ||
+		    lastGradientStartColor != settings.gradientStartColor ||
+		    lastGradientEndColor != settings.gradientEndColor) {
+			settingsChanged = true;
+			lastHandheldFontSize = settings.handheldFontSize;
+			lastDockedFontSize = settings.dockedFontSize;
+			lastTextColor = settings.textColor;
+			lastUseGradient = settings.useGradient;
+			lastGradientStartColor = settings.gradientStartColor;
+			lastGradientEndColor = settings.gradientEndColor;
+		}
+		
 		// Update fontsize based on performance mode
 		apmGetPerformanceMode(&performanceMode);
 		if (performanceMode == ApmPerformanceMode_Normal) {
-			fontsize = settings.handheldFontSize;
+			if (fontsize != settings.handheldFontSize) {
+				fontsize = settings.handheldFontSize;
+				settingsChanged = true;
+			}
 		}
-		else fontsize = settings.dockedFontSize;
+		else {
+			if (fontsize != settings.dockedFontSize) {
+				fontsize = settings.dockedFontSize;
+				settingsChanged = true;
+			}
+		}
+		
+		// Invalidate UI if settings changed
+		if (settingsChanged) {
+			if (statusDrawer) {
+				statusDrawer->invalidate();
+			}
+			if (fpsGraphDrawer) {
+				fpsGraphDrawer->invalidate();
+			}
+		}
 		
 		uint32_t current_lcd_hz = GetHzLCD();
 		uint64_t current_time = svcGetSystemTick();
