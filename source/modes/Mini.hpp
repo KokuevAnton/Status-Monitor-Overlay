@@ -34,6 +34,19 @@ private:
     size_t frameTimeHistoryCount = 0;
     uint64_t lastTrackedFrameNumber = 0; // Local tracking to avoid thread sync issues
 
+    // FPS history for percentile calculation (last 50 seconds)
+    // Store frame time in ticks for accurate percentile calculation
+    struct FPSHistoryEntry {
+        uint64_t timestamp; // System tick timestamp
+        uint32_t frameTimeTicks; // Frame time in ticks (from FPSticks)
+    };
+    struct FPSPercentiles {
+        float percentile_1pct;
+        float percentile_01pct;
+    };
+    std::vector<FPSHistoryEntry> fpsHistory;
+    uint64_t lastRecordedFrameNumber = 0; // Track last recorded frame to avoid duplicates
+
     struct ButtonState {
         std::atomic<bool> minusDragActive{false};
         std::atomic<bool> plusDragActive{false};
@@ -41,6 +54,57 @@ private:
 
     Thread touchPollThread;
     std::atomic<bool> touchPollRunning{false};
+    
+    // Calculate FPS percentiles (1% and 0.1% minimum) from frame times
+    // Uses frame time directly for accurate percentile calculation of worst frames
+    FPSPercentiles calculateFPSPercentiles() {
+        FPSPercentiles result;
+        if (fpsHistory.empty()) {
+            result.percentile_1pct = FPSmin;
+            result.percentile_01pct = FPSmin;
+            return result;
+        }
+        
+        // Create a copy of frame times and sort (larger frame time = lower FPS = worse performance)
+        std::vector<uint32_t> frameTimes;
+        frameTimes.reserve(fpsHistory.size());
+        for (const auto& entry : fpsHistory) {
+            if (entry.frameTimeTicks > 0) {
+                frameTimes.push_back(entry.frameTimeTicks);
+            }
+        }
+        
+        if (frameTimes.empty()) {
+            result.percentile_1pct = FPSmin;
+            result.percentile_01pct = FPSmin;
+            return result;
+        }
+        
+        // Sort in descending order (worst frames first)
+        std::sort(frameTimes.begin(), frameTimes.end(), std::greater<uint32_t>());
+        
+        // Calculate 1% and 0.1% percentiles (worst frames)
+        // 1% means 1% of frames have worse performance (longer frame time)
+        // 0.1% means 0.1% of frames have worse performance
+        // Use (size - 1) * p formula for more accurate percentile calculation
+        const size_t size = frameTimes.size();
+        const size_t index_1pct = (size > 1) ? static_cast<size_t>((size - 1) * 0.01f) : 0;
+        const size_t index_01pct = (size > 1) ? static_cast<size_t>((size - 1) * 0.001f) : 0;
+        
+        // Get frame times for worst 1% and 0.1% frames
+        // frameTimes is sorted in descending order (worst first)
+        const uint32_t worst_1pct_ticks = (index_1pct < size) ? frameTimes[index_1pct] : frameTimes[0];
+        const uint32_t worst_01pct_ticks = (index_01pct < size) ? frameTimes[index_01pct] : frameTimes[0];
+        
+        // Convert frame time (ticks) to FPS
+        result.percentile_1pct = (worst_1pct_ticks > 0) ? 
+            static_cast<float>(systemtickfrequency) / static_cast<float>(worst_1pct_ticks) : FPSmin;
+        result.percentile_01pct = (worst_01pct_ticks > 0) ? 
+            static_cast<float>(systemtickfrequency) / static_cast<float>(worst_01pct_ticks) : FPSmin;
+        
+        return result;
+    }
+    
 public:
     MiniOverlay() { 
         tsl::hlp::requestForeground(false);
@@ -1230,12 +1294,24 @@ public:
         // Track frame time history for average calculation (last 300 frames)
         // Copy data under mutex to avoid thread synchronization issues
         uint64_t local_frameNumber = 0;
+        uint64_t local_frameNumber_percentiles = 0;
         uint32_t local_FPSticks[10] = {0};
+        uint32_t local_FPSticks_all[10] = {0}; // All 10 frames for percentile calculation
         bool local_NxFps_valid = false;
-        if (settings.showFrameTime && GameRunning && NxFps && NxFps->MAGIC == 0x465053) {
+        bool local_NxFps_valid_percentiles = false;
+        float local_FPSavg = 0.0f; // Current FPS for frequency calculation
+        if (GameRunning && NxFps && NxFps->MAGIC == 0x465053) {
             local_frameNumber = NxFps->frameNumber;
-            memcpy(local_FPSticks, NxFps->FPSticks, sizeof(local_FPSticks));
-            local_NxFps_valid = true;
+            local_FPSavg = FPSavg;
+            if (settings.showFrameTime) {
+                memcpy(local_FPSticks, NxFps->FPSticks, sizeof(local_FPSticks));
+                local_NxFps_valid = true;
+            }
+            if (settings.showFPSPercentiles) {
+                local_frameNumber_percentiles = NxFps->frameNumber;
+                memcpy(local_FPSticks_all, NxFps->FPSticks, sizeof(local_FPSticks_all));
+                local_NxFps_valid_percentiles = true;
+            }
         }
         
         mutexUnlock(&mutex_Misc);
@@ -1261,6 +1337,97 @@ public:
             frameTimeHistoryCount = 0;
             frameTimeHistoryIndex = 0;
             lastTrackedFrameNumber = 0;
+        }
+        
+        // Track frame time history for percentile calculation (last 50 seconds)
+        // Use frame time directly from FPSticks for accurate percentile calculation
+        // If update rate is low (< 1/10 of FPS), save all frames from FPSticks array
+        // If update rate is high (>= 1/10 of FPS), save all frames that appeared since last update
+        if (settings.showFPSPercentiles && local_NxFps_valid_percentiles && local_FPSavg > 0.0f && local_FPSavg < 254.0f) {
+            const uint64_t currentTick = svcGetSystemTick();
+            // Calculate 50 seconds in ticks using systemtickfrequency (depends on system, not hardcoded)
+            const uint64_t fpsHistoryDurationTicks = 50ULL * systemtickfrequency;
+            const uint64_t cutoffTick = currentTick - fpsHistoryDurationTicks;
+            
+            // Remove old entries (older than 50 seconds)
+            fpsHistory.erase(
+                std::remove_if(fpsHistory.begin(), fpsHistory.end(),
+                    [cutoffTick](const FPSHistoryEntry& entry) {
+                        return entry.timestamp < cutoffTick;
+                    }),
+                fpsHistory.end()
+            );
+            
+            // Calculate if we need to save all frames or just new ones
+            // If update rate (TeslaFPS) is less than 1/10 of game FPS, save all frames
+            const float updateRate = static_cast<float>(TeslaFPS);
+            const float fpsRatio = updateRate / local_FPSavg;
+            const bool saveAllFrames = (fpsRatio < 0.1f); // Update rate < 1/10 of FPS
+            
+            if (local_frameNumber_percentiles != lastRecordedFrameNumber) {
+                const size_t element_count = sizeof(local_FPSticks_all) / sizeof(local_FPSticks_all[0]);
+                
+                // Calculate how many frames passed since last update
+                const uint64_t framesSinceLastUpdate = (local_frameNumber_percentiles > lastRecordedFrameNumber) ?
+                    (local_frameNumber_percentiles - lastRecordedFrameNumber) : 0;
+                
+                // Calculate timestamp for each frame
+                // Since FPSticks[element_count-1] is the most recent frame, we calculate timestamps backwards
+                // Each frame's timestamp = currentTick - sum of frame times of all frames that come after it
+                // We iterate from newest to oldest, accumulating frame times as we go
+                
+                if (saveAllFrames) {
+                    // Update rate is low (< 1/10 of FPS)
+                    // Save all valid frames from FPSticks array, but limit to frames that actually passed
+                    // This prevents data loss when update rate is low, but avoids duplicates
+                    const size_t framesToSave = (framesSinceLastUpdate <= element_count) ? 
+                        static_cast<size_t>(framesSinceLastUpdate) : element_count;
+                    
+                    // Save frames starting from the newest (last element is most recent)
+                    // Calculate timestamp for each frame by subtracting accumulated frame times
+                    size_t savedCount = 0;
+                    uint64_t accumulatedFrameTime = 0; // Accumulated time for frames we've already processed (newer frames)
+                    for (int i = static_cast<int>(element_count) - 1; i >= 0 && savedCount < framesToSave; i--) {
+                        if (local_FPSticks_all[i] > 0) {
+                            // Timestamp for this frame = currentTick - accumulated time of all frames after it
+                            uint64_t frameTimestamp = currentTick - accumulatedFrameTime;
+                            fpsHistory.push_back({frameTimestamp, local_FPSticks_all[i]});
+                            // Add this frame's time to accumulated time for next (older) frame
+                            accumulatedFrameTime += local_FPSticks_all[i];
+                            savedCount++;
+                        }
+                    }
+                } else {
+                    // Update rate is high enough (>= 1/10 of FPS)
+                    // Save all frames that appeared since last update
+                    // Since FPSticks contains last 10 frames, and update rate is high,
+                    // all frames in the array should be new (or we save all available)
+                    // We save up to the number of frames that passed, but not more than available
+                    const size_t framesToSave = (framesSinceLastUpdate <= element_count) ? 
+                        static_cast<size_t>(framesSinceLastUpdate) : element_count;
+                    
+                    // Save frames starting from the newest (last element is most recent)
+                    // Calculate timestamp for each frame by subtracting accumulated frame times
+                    size_t savedCount = 0;
+                    uint64_t accumulatedFrameTime = 0; // Accumulated time for frames we've already processed (newer frames)
+                    for (int i = static_cast<int>(element_count) - 1; i >= 0 && savedCount < framesToSave; i--) {
+                        if (local_FPSticks_all[i] > 0) {
+                            // Timestamp for this frame = currentTick - accumulated time of all frames after it
+                            uint64_t frameTimestamp = currentTick - accumulatedFrameTime;
+                            fpsHistory.push_back({frameTimestamp, local_FPSticks_all[i]});
+                            // Add this frame's time to accumulated time for next (older) frame
+                            accumulatedFrameTime += local_FPSticks_all[i];
+                            savedCount++;
+                        }
+                    }
+                }
+                
+                lastRecordedFrameNumber = local_frameNumber_percentiles;
+            }
+        } else if (!GameRunning || !local_NxFps_valid_percentiles) {
+            // Clear history when game stops or FPS data is invalid
+            fpsHistory.clear();
+            lastRecordedFrameNumber = 0;
         }
     
         // Battery/power draw - always update since BAT/DRAW might be displayed
@@ -1352,6 +1519,21 @@ public:
             else if (key == "FPS" && !(flags & 64) && GameRunning) {
                 if (Temp[0]) strcat(Temp, "\n");
                 char Temp_s[48];
+                
+                // Determine what to show in square brackets
+                float bracketMin, bracketMax;
+                bool usePercentileFormat = false;
+                if (settings.showFPSPercentiles && !fpsHistory.empty()) {
+                    FPSPercentiles percentiles = calculateFPSPercentiles();
+                    bracketMin = percentiles.percentile_1pct;  // 1% percentile
+                    bracketMax = percentiles.percentile_01pct; // 0.1% percentile
+                    usePercentileFormat = true;
+                } else {
+                    bracketMin = FPSmin;
+                    bracketMax = FPSmax;
+                    usePercentileFormat = false;
+                }
+                
                 if (settings.showFrameTime && frameTimeHistoryCount > 0) {
                     // Calculate average frame time from last 300 frames
                     // Sum ticks first, then convert to milliseconds to avoid rounding errors
@@ -1362,15 +1544,31 @@ public:
                     float avg_frame_time_ms = (sum_ticks * 1000.0f) / (frameTimeHistoryCount * systemtickfrequency);
                     
                     if (settings.showRefreshRate && currentRefreshRate > 0) {
-                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]/%u (%.3f ms)", FPSavg, FPSmin, FPSmax, currentRefreshRate, avg_frame_time_ms);
+                        if (usePercentileFormat) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [1%%-%2.1f] [0.1%%-%2.1f] (%.3f ms)", FPSavg, currentRefreshRate, bracketMin, bracketMax, avg_frame_time_ms);
+                        } else {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f] (%.3f ms)", FPSavg, currentRefreshRate, bracketMin, bracketMax, avg_frame_time_ms);
+                        }
                     } else {
-                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f] (%.3f ms)", FPSavg, FPSmin, FPSmax, avg_frame_time_ms);
+                        if (usePercentileFormat) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f [1%%-%2.1f] [0.1%%-%2.1f] (%.3f ms)", FPSavg, bracketMin, bracketMax, avg_frame_time_ms);
+                        } else {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f] (%.3f ms)", FPSavg, bracketMin, bracketMax, avg_frame_time_ms);
+                        }
                     }
                 } else {
                     if (settings.showRefreshRate && currentRefreshRate > 0) {
-                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f]", FPSavg, currentRefreshRate, FPSmin, FPSmax);
+                        if (usePercentileFormat) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [1%%-%2.1f] [0.1%%-%2.1f]", FPSavg, currentRefreshRate, bracketMin, bracketMax);
+                        } else {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f/%u [%2.1f - %2.1f]", FPSavg, currentRefreshRate, bracketMin, bracketMax);
+                        }
                     } else {
-                        snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, FPSmin, FPSmax);
+                        if (usePercentileFormat) {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f [1%%-%2.1f] [0.1%%-%2.1f]", FPSavg, bracketMin, bracketMax);
+                        } else {
+                            snprintf(Temp_s, sizeof(Temp_s), "%2.1f [%2.1f - %2.1f]", FPSavg, bracketMin, bracketMax);
+                        }
                     }
                 }
                 strcat(Temp, Temp_s);

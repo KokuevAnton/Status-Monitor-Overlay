@@ -1432,6 +1432,7 @@ struct MiniSettings {
     bool sleepExit;
     bool showRefreshRate;
     bool showFrameTime;
+    bool showFPSPercentiles;
     //int setPos;
     int frameOffsetX;
     int frameOffsetY;
@@ -1568,6 +1569,7 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
     settings->sleepExit = false;
     settings->showRefreshRate = true;
     settings->showFrameTime = false;
+    settings->showFPSPercentiles = false;
     //settings->setPos = 0;
     settings->frameOffsetX = 10;
     settings->frameOffsetY = 10;
@@ -1804,6 +1806,14 @@ ALWAYS_INLINE void GetConfigSettings(MiniSettings* settings) {
         key = it->second;
         convertToUpper(key);
         settings->showFrameTime = (key != "FALSE");
+    }
+    
+    // Process show FPS percentiles
+    it = section.find("show_fps_percentiles");
+    if (it != section.end()) {
+        key = it->second;
+        convertToUpper(key);
+        settings->showFPSPercentiles = (key != "FALSE");
     }
     
     // Process alignment settings

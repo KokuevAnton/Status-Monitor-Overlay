@@ -52,7 +52,7 @@ static std::string lastSelectedItem;
 //        });
 //        list->addItem(comFPSCounter);
 //
-//        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
+//        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor+", "Modes");
 //        rootFrame->setContent(list);
 //
 //        return rootFrame;
@@ -129,7 +129,7 @@ public:
         //    list->addItem(Res);
         //}
         //tsl::elm::g_disableMenuCacheOnReturn.store(true, std::memory_order_release);
-        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", "Modes");
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor+", "Modes");
         if (!lastSelectedItem.empty())
             list->jumpToItem(lastSelectedItem);
 
@@ -390,7 +390,7 @@ public:
             list->jumpToItem(lastSelectedItem);
 
         //list->disableCaching();
-        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor", APP_VERSION);
+        tsl::elm::HeaderOverlayFrame* rootFrame = new tsl::elm::HeaderOverlayFrame("Status Monitor+", APP_VERSION);
         rootFrame->setContent(list);
 
         return rootFrame;
@@ -1000,7 +1000,7 @@ inline void setupMode(const std::string& modeType = "") {
 // This function gets called on startup to create a new Overlay object
 int main(int argc, char **argv) {
 
-    // load heap settings outside of loop (only Status Monitor directive)
+    // load heap settings outside of loop (only Status Monitor+ directive)
     ult::currentHeapSize = ult::getCurrentHeapSize();
     ult::expandedMemory = ult::currentHeapSize >= static_cast<size_t>(ult::OverlayHeapSize::Size_8MB);
     ult::limitedMemory = ult::currentHeapSize == static_cast<size_t>(ult::OverlayHeapSize::Size_4MB);

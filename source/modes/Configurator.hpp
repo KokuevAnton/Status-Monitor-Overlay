@@ -464,6 +464,20 @@ public:
             });
             list->addItem(showRefreshRate);
 
+            if (isMiniMode) {
+                auto* showFrameTime = new tsl::elm::ToggleListItem("Show Frame Time", getCurrentShowFrameTime());
+                showFrameTime->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_frame_time", state ? "true" : "false");
+                });
+                list->addItem(showFrameTime);
+                
+                auto* showFPSPercentiles = new tsl::elm::ToggleListItem("Show FPS Percentiles", getCurrentShowFPSPercentiles());
+                showFPSPercentiles->setStateChangedListener([this, section](bool state) {
+                    ult::setIniFileValue(configIniPath, section, "show_fps_percentiles", state ? "true" : "false");
+                });
+                list->addItem(showFPSPercentiles);
+            }
+
             auto* disableScreenshots = new tsl::elm::ToggleListItem("Disable Screenshots", getCurrentDisableScreenshots(section));
             disableScreenshots->setStateChangedListener([this, section](bool state) {
                 ult::setIniFileValue(configIniPath, section, "disable_screenshots", state ? "true" : "false");
@@ -646,6 +660,22 @@ private:
         convertToUpper(value);
         return value != "FALSE";
     }
+    
+    bool getCurrentShowFPSPercentiles() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_fps_percentiles");
+        if (value.empty()) return false; // Default: false
+        convertToUpper(value);
+        return value != "FALSE";
+    }
+    
+    bool getCurrentShowFrameTime() {
+        const std::string section = isMiniMode ? "mini" : "micro";
+        std::string value = ult::parseValueFromIniSection(configIniPath, section, "show_frame_time");
+        if (value.empty()) return false; // Default: false
+        convertToUpper(value);
+        return value != "FALSE";
+    }
 
     bool getCurrentUseIntegerCounter(const std::string& section) {
         std::string value = ult::parseValueFromIniSection(configIniPath, section, "use_integer_counter");
@@ -817,7 +847,7 @@ public:
         auto* list = new tsl::elm::List();
         list->addItem(new tsl::elm::CategoryHeader("Refresh Rate"));
 
-        static const std::vector<int> rates = {1, 2, 3, 5, 10, 15, 30, 60};
+        static const std::vector<int> rates = {1, 2, 3, 5, 6, 10, 15, 30, 60};
         for (int rate : rates) {
             auto* rateItem = new tsl::elm::ListItem(std::to_string(rate) + " Hz");
             if (rate == currentRate) {
