@@ -268,8 +268,8 @@ public:
             Nano->disableClickAnimation();
             Nano->setClickListener([](uint64_t keys) {
                 if (keys & KEY_A) {
-                    lastMode = "nano";
-                    tsl::swapTo<NanoOverlay>();
+                    tsl::setNextOverlay(filepath, "-nano_");
+                    tsl::Overlay::get()->close();
                     return true;
                 }
                 if (keys & KEY_Y) {
@@ -691,6 +691,99 @@ public:
     }
 };
 
+class NanoEntryOverlay : public tsl::Overlay {
+public:
+    NanoEntryOverlay() {}
+
+    virtual void initServices() override {
+
+        //tsl::hlp::requestForeground(false);
+        // Same service‐init as before
+        tsl::hlp::doWithSmSession([this]{
+            apmInitialize();
+            if (hosversionAtLeast(8,0,0)) clkrstCheck = clkrstInitialize();
+            else pcvCheck = pcvInitialize();
+
+            if (R_SUCCEEDED(nvInitialize())) nvCheck = nvOpen(&fd, "/dev/nvhost-ctrl-gpu");
+
+            if (hosversionAtLeast(5,0,0)) tcCheck = tcInitialize();
+
+            if (hosversionAtLeast(6,0,0) && R_SUCCEEDED(pwmInitialize())) {
+                pwmCheck = pwmOpenSession2(&g_ICon, 0x3D000001);
+            }
+
+            i2cCheck = i2cInitialize();
+
+            psmCheck = psmInitialize();
+            if (R_SUCCEEDED(psmCheck)) {
+                psmService = psmGetServiceSession();
+            }
+
+            SaltySD = CheckPort();
+
+            if (SaltySD) {
+                LoadSharedMemory();
+            }
+            if (sysclkIpcRunning() && R_SUCCEEDED(sysclkIpcInitialize())) {
+                uint32_t sysClkApiVer = 0;
+                sysclkIpcGetAPIVersion(&sysClkApiVer);
+                if (sysClkApiVer < 4) {
+                    sysclkIpcExit();
+                }
+                else sysclkCheck = 0;
+            }
+            if (R_SUCCEEDED(splInitialize())) {
+                u64 sku = 0;
+                splGetConfig(SplConfigItem_HardwareType, &sku);
+                switch(sku) {
+                    case 2 ... 5:
+                        isMariko = true;
+                        break;
+                    default:
+                        isMariko = false;
+                }
+            }
+            splExit();
+        });
+        Hinted = envIsSyscallHinted(0x6F);
+
+    }
+
+    virtual void exitServices() override {
+        CloseThreads();
+        shmemClose(&_sharedmemory);
+        if (R_SUCCEEDED(sysclkCheck)) {
+            sysclkIpcExit();
+        }
+        // Exit services
+        clkrstExit();
+        pcvExit();
+        tsExit();
+        tcExit();
+        pwmChannelSessionClose(&g_ICon);
+        pwmExit();
+        i2cExit();
+        psmExit();
+        nvClose(fd);
+        nvExit();
+        apmExit();
+    }
+
+    // **Override onShow** so that as soon as this Overlay appears, we let input pass through.
+    virtual void onShow() override {
+        // Request that Tesla stop grabbing all buttons/touches
+        tsl::hlp::requestForeground(false);
+
+        // (Optional) hide Tesla's footer if you don't want it
+        //deactivateOriginalFooter = true;
+    }
+
+    virtual std::unique_ptr<tsl::Gui> loadInitialGui() override {
+        // Immediately show your NanoOverlay page
+        return initially<NanoOverlay>();
+    }
+};
+
 class FPSGraphEntryOverlay : public tsl::Overlay {
 public:
     FPSGraphEntryOverlay() {}
@@ -1036,17 +1129,17 @@ int main(int argc, char **argv) {
                 auto& section = sectionIt->second;
                 
                 // Compare and update if values differ
-                const std::string expectedArgs = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
+                const std::string expectedArgs = "(-mini, -micro, -nano, -fps_graph, -fps_counter, -game_resolutions)";
                 
                 if (section["mode_args"] != expectedArgs) {
                     section["mode_args"] = expectedArgs;
-                    section["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
+                    section["mode_labels"] = "(Mini, Micro, Nano, FPS Graph, FPS Counter, Game Resolutions)";
                     ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
                 }
             } else {
                 // If section doesn't exist, create it with expected values
-                iniData[filename]["mode_args"] = "(-mini, -micro, -fps_graph, -fps_counter, -game_resolutions)";
-                iniData[filename]["mode_labels"] = "(Mini, Micro, FPS Graph, FPS Counter, Game Resolutions)";
+                iniData[filename]["mode_args"] = "(-mini, -micro, -nano, -fps_graph, -fps_counter, -game_resolutions)";
+                iniData[filename]["mode_labels"] = "(Mini, Micro, Nano, FPS Graph, FPS Counter, Game Resolutions)";
                 ult::saveIniFileData(ult::OVERLAYS_INI_FILEPATH, iniData);
             }
         }
@@ -1104,6 +1197,21 @@ int main(int argc, char **argv) {
                     }
                 }
                 return tsl::loop<MiniEntryOverlay>(argc, argv);
+            }
+            // Nano mode
+            else if (strcasecmp(compareStr, "-nano") == 0) {
+                FullMode = false;
+                lastMode = "nano";
+                if (hasUnderscore) {
+                    setupMode();
+                } else {
+                    skipMain = true;
+                    if (!ult::limitedMemory) {
+                        ult::DefaultFramebufferWidth = 1280;
+                        ult::DefaultFramebufferHeight = 720;
+                    }
+                }
+                return tsl::loop<NanoEntryOverlay>(argc, argv);
             }
             // FPS Graph mode
             else if (strcasecmp(compareStr, "-fps_graph") == 0) {
